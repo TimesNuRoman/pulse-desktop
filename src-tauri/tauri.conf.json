@@ -1,7 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Pulse",
-  "version": "0.6.0",
+  "version": "0.6.4",
+  "mainBinaryName": "pulse-desktop",
   "identifier": "app.pulse.local",
   "build": {
     "beforeDevCommand": "npm run dev",
