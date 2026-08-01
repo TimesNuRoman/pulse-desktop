@@ -43,6 +43,44 @@ const WEB_SEARCH_UA: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
      (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
+/// Нормализуем URL для дедупа: scheme+host lower, остальное — как есть.
+/// `https://en.wikipedia.org/wiki/Rust_(programming_language)` и
+/// `https://EN.Wikipedia.org/wiki/Rust_(programming_language)` →
+/// один и тот же ключ.
+fn url_dedup_key(url: &str) -> String {
+    let lower = url.to_lowercase();
+    // Отрезаем стандартный трекинг (utm_* и `#fragment`).
+    let no_utm = if let Some(idx) = lower.find("utm_") {
+        // ищем "&" перед "utm_" — безопасно рубим всё, что идёт дальше
+        let cut = lower[..idx]
+            .trim_end_matches(|c: char| c == '?' || c == '&')
+            .to_string();
+        cut
+    } else {
+        lower
+    };
+    let no_frag = no_utm.split('#').next().unwrap_or(&no_utm).to_string();
+    no_frag
+}
+
+/// Дедуп по URL: первый item с данным URL побеждает (сохраняем порядок).
+/// Применяется к результату одного backend'а ДО truncate(limit), чтобы
+/// `total` отражал «сколько уникальных», а не «сколько уникальных + дублей».
+fn dedup_by_url(items: Vec<SearchItem>) -> Vec<SearchItem> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::with_capacity(items.len());
+    for it in items {
+        let key = url_dedup_key(&it.url);
+        if key.is_empty() {
+            continue;
+        }
+        if seen.insert(key) {
+            out.push(it);
+        }
+    }
+    out
+}
+
 /// Классифицируем URL по host → (source_tag, site_name).
 /// Используется для badge'а в UI и для подсказки LLM, откуда факт.
 fn classify_source(url: &str) -> (&'static str, &'static str) {
@@ -234,7 +272,7 @@ async fn try_ddg_html(query: &str, client: &reqwest::Client) -> Result<Vec<Searc
         .text()
         .await
         .map_err(|e| format!("ddg-html: body: {e}"))?;
-    Ok(parse_ddg_html(&html))
+    Ok(dedup_by_url(parse_ddg_html(&html)))
 }
 
 async fn try_ddg_lite(query: &str, client: &reqwest::Client) -> Result<Vec<SearchItem>, String> {
@@ -255,19 +293,20 @@ async fn try_ddg_lite(query: &str, client: &reqwest::Client) -> Result<Vec<Searc
         .text()
         .await
         .map_err(|e| format!("ddg-lite: body: {e}"))?;
-    Ok(parse_ddg_lite(&html))
+    Ok(dedup_by_url(parse_ddg_lite(&html)))
 }
 
 async fn try_wikipedia(query: &str, client: &reqwest::Client) -> Result<Vec<SearchItem>, String> {
     // Lang: ru если есть кириллица, иначе en.
-    let lang = if query.chars().any(|c| ('\u{0400}'..='\u{04FF}').contains(&c)) {
+    let primary = if query.chars().any(|c| ('\u{0400}'..='\u{04FF}').contains(&c)) {
         "ru"
     } else {
         "en"
     };
     // OpenSearch API: [query, [titles], [descs], [urls]]
     let url = format!(
-        "https://{lang}.wikipedia.org/w/api.php?action=opensearch&format=json&limit=5&search={}",
+        "https://{}.wikipedia.org/w/api.php?action=opensearch&format=json&limit=5&search={}",
+        primary,
         urlencoding::encode(query)
     );
     let resp = client
@@ -275,14 +314,14 @@ async fn try_wikipedia(query: &str, client: &reqwest::Client) -> Result<Vec<Sear
         .header("User-Agent", WEB_SEARCH_UA)
         .send()
         .await
-        .map_err(|e| format!("wikipedia: {e}"))?;
+        .map_err(|e| format!("wikipedia[{primary}]: {e}"))?;
     if !resp.status().is_success() {
-        return Err(format!("wikipedia: HTTP {}", resp.status()));
+        return Err(format!("wikipedia[{primary}]: HTTP {}", resp.status()));
     }
     let json: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| format!("wikipedia: json: {e}"))?;
+        .map_err(|e| format!("wikipedia[{primary}]: json: {e}"))?;
     let titles = json
         .get(1)
         .and_then(|v| v.as_array())
@@ -299,6 +338,7 @@ async fn try_wikipedia(query: &str, client: &reqwest::Client) -> Result<Vec<Sear
         .cloned()
         .unwrap_or_default();
     let mut out = Vec::new();
+    let mut needs_excerpt = false;
     for (i, title_val) in titles.iter().enumerate() {
         let title = title_val.as_str().unwrap_or("").to_string();
         if title.is_empty() {
@@ -309,6 +349,11 @@ async fn try_wikipedia(query: &str, client: &reqwest::Client) -> Result<Vec<Sear
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+        if desc.is_empty() {
+            // ru.wikipedia (и иногда en) отдаёт пустые descriptions на
+            // opensearch — дозапросим `extracts` батчем ниже.
+            needs_excerpt = true;
+        }
         let url = urls
             .get(i)
             .and_then(|v| v.as_str())
@@ -325,7 +370,91 @@ async fn try_wikipedia(query: &str, client: &reqwest::Client) -> Result<Vec<Sear
             site_name: "Wikipedia".to_string(),
         });
     }
-    Ok(out)
+    if needs_excerpt && !out.is_empty() {
+        // Дозапрос: `action=query&prop=extracts&exintro=1&explaintext=1`
+        // даёт первое предложение (до ~500 символов) для батча titles.
+        let titles_param: Vec<String> =
+            out.iter().map(|it| it.title.clone()).collect();
+        let url = format!(
+            "https://{}.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&format=json&titles={}",
+            primary,
+            urlencoding::encode(&titles_param.join("|"))
+        );
+        if let Ok(resp) = client.get(&url).header("User-Agent", WEB_SEARCH_UA).send().await {
+            if let Ok(j) = resp.json::<serde_json::Value>().await {
+                if let Some(pages) = j.get("query").and_then(|q| q.get("pages")).and_then(|p| p.as_object()) {
+                    // Pages идут как { "12345": { title, extract, ... }, ... } — индексируем по title.
+                    let mut by_title: std::collections::HashMap<String, String> =
+                        std::collections::HashMap::new();
+                    for (_id, page) in pages {
+                        let t = page.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let e = page.get("extract").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        if !t.is_empty() && !e.is_empty() {
+                            by_title.insert(t, e);
+                        }
+                    }
+                    for it in &mut out {
+                        if it.snippet.is_empty() {
+                            if let Some(ex) = by_title.get(&it.title) {
+                                it.snippet = trim_snippet(ex);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Если primary-lang вернул пусто и в запросе есть латиница — попробуем
+    // вторую локаль. Типичный кейс: "SVE инструкции" — на ru.wikipedia
+    // opensearch 0 совпадений, а на en.wikipedia — есть.
+    if out.is_empty() {
+        let secondary = if primary == "ru" { "en" } else { "ru" };
+        // Не дёргаем en если в запросе НЕТ латиницы — бессмысленно.
+        if secondary == "en" && !query_has_latin(query) {
+            return Ok(out);
+        }
+        // Аналогично для ru.
+        if secondary == "ru" && !query.chars().any(|c| ('\u{0400}'..='\u{04FF}').contains(&c)) {
+            return Ok(out);
+        }
+        let url = format!(
+            "https://{}.wikipedia.org/w/api.php?action=opensearch&format=json&limit=5&search={}",
+            secondary,
+            urlencoding::encode(query)
+        );
+        if let Ok(resp) = client.get(&url).header("User-Agent", WEB_SEARCH_UA).send().await {
+            if resp.status().is_success() {
+                if let Ok(json) = resp.json::<serde_json::Value>().await {
+                    let titles = json.get(1).and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                    let descs = json.get(2).and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                    let urls = json.get(3).and_then(|v| v.as_array()).cloned().unwrap_or_default();
+                    for (i, title_val) in titles.iter().enumerate() {
+                        let title = title_val.as_str().unwrap_or("").to_string();
+                        if title.is_empty() { continue; }
+                        let desc = descs.get(i).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let url = urls.get(i).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        if url.is_empty() { continue; }
+                        out.push(SearchItem {
+                            title,
+                            url,
+                            snippet: trim_snippet(&desc),
+                            source: "wikipedia".to_string(),
+                            site_name: "Wikipedia".to_string(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Ok(dedup_by_url(out))
+}
+
+/// True если в строке есть хотя бы один ASCII-латинский символ (A-Z / a-z).
+/// Используется для решения: «есть ли смысл пробовать en.wikipedia при пустом
+/// ответе primary (ru)» — для чисто-кириллических запросов en-фоллбэк
+/// бесполезен (Wikipedia не транслитерирует).
+fn query_has_latin(s: &str) -> bool {
+    s.chars().any(|c| c.is_ascii_alphabetic())
 }
 
 /// Общий веб-поиск с тремя fallback'ами. Frontend вызывает
@@ -402,7 +531,27 @@ pub async fn web_search(query: String, limit: Option<u32>) -> Result<WebSearchRe
         Err(e) => eprintln!("[pulse] web_search wikipedia failed: {e}"),
     }
 
-    // Все три провалились или вернули пусто
+    // 4) DDG Instant Answer API — официальный JSON-endpoint без anti-bot.
+    // Возвращает curated abstract + RelatedTopics. Часто пусто, но для
+    // популярных терминов («Rust programming language», «SVE instructions»)
+    // выдаёт готовый abstract с описанием. Это последний шанс перед offline.
+    match try_ddg_instant(&query, &client).await {
+        Ok(mut items) if !items.is_empty() => {
+            items.truncate(limit);
+            return Ok(WebSearchResult {
+                query,
+                backend: "ddg-instant".to_string(),
+                total: items.len() as u32,
+                items,
+                offline: false,
+                error: None,
+            });
+        }
+        Ok(_) => {}
+        Err(e) => eprintln!("[pulse] web_search ddg-instant failed: {e}"),
+    }
+
+    // Все четыре провалились или вернули пусто
     Ok(WebSearchResult {
         query,
         backend: "none".to_string(),
@@ -410,9 +559,102 @@ pub async fn web_search(query: String, limit: Option<u32>) -> Result<WebSearchRe
         items: vec![],
         offline: true,
         error: Some(
-            "Все поисковики (DDG HTML, DDG Lite, Wikipedia) вернули пусто или недоступны. Проверь интернет."
+            "Все поисковики (DDG HTML, DDG Lite, Wikipedia, DDG Instant) вернули пусто или недоступны. Проверь интернет."
                 .to_string(),
         ),
+    })
+}
+
+/// Официальный DuckDuckGo Instant Answer API: `api.duckduckgo.com`.
+/// Без anti-bot (это и есть «API»), без browser-like User-Agent.
+/// Возвращает JSON: { Abstract, AbstractURL, RelatedTopics: [{Text, FirstURL}, ...] }.
+async fn try_ddg_instant(query: &str, client: &reqwest::Client) -> Result<Vec<SearchItem>, String> {
+    let url = format!(
+        "https://api.duckduckgo.com/?q={}&format=json&no_html=1&skip_disambig=1&limit=10",
+        urlencoding::encode(query)
+    );
+    let resp = client
+        .get(&url)
+        .header("User-Agent", WEB_SEARCH_UA)
+        .send()
+        .await
+        .map_err(|e| format!("ddg-instant: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("ddg-instant: HTTP {}", resp.status()));
+    }
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("ddg-instant: json: {e}"))?;
+    let mut out = Vec::new();
+    // 1) Abstract (top-level, если есть)
+    if let (Some(abstract_txt), Some(abstract_url)) = (
+        json.get("Abstract").and_then(|v| v.as_str()),
+        json.get("AbstractURL").and_then(|v| v.as_str()),
+    ) {
+        if !abstract_txt.is_empty() && !abstract_url.is_empty() {
+            let title = json
+                .get("Heading")
+                .and_then(|v| v.as_str())
+                .unwrap_or(query)
+                .to_string();
+            out.push(SearchItem {
+                title: title.clone(),
+                url: abstract_url.to_string(),
+                snippet: trim_snippet(abstract_txt),
+                source: "general".to_string(),
+                site_name: "DuckDuckGo".to_string(),
+            });
+        }
+    }
+    // 2) RelatedTopics — плоский массив или вложенные группы.
+    if let Some(rt) = json.get("RelatedTopics").and_then(|v| v.as_array()) {
+        for item in rt {
+            // Некоторые RelatedTopics — «groups» с вложенными Topics.
+            if let Some(topics) = item.get("Topics").and_then(|v| v.as_array()) {
+                for nested in topics {
+                    if let Some(p) = parse_ddg_instant_topic(nested) {
+                        out.push(p);
+                    }
+                }
+                continue;
+            }
+            if let Some(p) = parse_ddg_instant_topic(item) {
+                out.push(p);
+            }
+        }
+    }
+    Ok(dedup_by_url(out))
+}
+
+fn parse_ddg_instant_topic(v: &serde_json::Value) -> Option<SearchItem> {
+    let text = v.get("Text")?.as_str()?.to_string();
+    let url = v.get("FirstURL")?.as_str()?.to_string();
+    if text.is_empty() || url.is_empty() {
+        return None;
+    }
+    // URL у DDG-IA содержит redirect `//duckduckgo.com/?q=...` — раскрутим
+    // до исходного, если получится достать ?q=...&... (-> сам поисковый
+    // запрос, а не «настоящая» страница). Нам ОК оставить как redirect —
+    // UI всё равно открывает через `target="_blank"`, и редирект на DDG
+    // приемлем. Заголовок = text до первого перевода строки/точки.
+    let title = text
+        .split('\n')
+        .next()
+        .unwrap_or(&text)
+        .split(". ")
+        .next()
+        .unwrap_or(&text)
+        .chars()
+        .take(120)
+        .collect::<String>();
+    let (source_tag, site_name) = classify_source(&url);
+    Some(SearchItem {
+        title: if title.is_empty() { text.clone() } else { title },
+        url,
+        snippet: trim_snippet(&text),
+        source: source_tag.to_string(),
+        site_name: site_name.to_string(),
     })
 }
 
@@ -482,5 +724,57 @@ mod tests {
             classify_source("https://github.com/rust-lang/rust"),
             ("general", "GitHub")
         );
+    }
+
+    #[test]
+    fn url_dedup_key_normalizes_case_and_tracking() {
+        // Case-insensitive host, utm_ отрезается, fragment отрезается.
+        assert_eq!(
+            url_dedup_key("https://EN.Wikipedia.org/wiki/Rust?foo=bar&utm_source=x#section"),
+            "https://en.wikipedia.org/wiki/rust?foo=bar"
+        );
+        assert_eq!(
+            url_dedup_key("https://example.com/path"),
+            "https://example.com/path"
+        );
+    }
+
+    #[test]
+    fn dedup_by_url_keeps_first_occurrence() {
+        let items = vec![
+            SearchItem {
+                title: "A".into(),
+                url: "https://en.wikipedia.org/wiki/Rust".into(),
+                snippet: "first".into(),
+                source: "wikipedia".into(),
+                site_name: "Wikipedia".into(),
+            },
+            SearchItem {
+                title: "B".into(),
+                url: "https://en.Wikipedia.org/wiki/Rust".into(),
+                snippet: "second".into(),
+                source: "wikipedia".into(),
+                site_name: "Wikipedia".into(),
+            },
+            SearchItem {
+                title: "C".into(),
+                url: "https://github.com/rust-lang/rust".into(),
+                snippet: "third".into(),
+                source: "general".into(),
+                site_name: "GitHub".into(),
+            },
+        ];
+        let out = dedup_by_url(items);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].snippet, "first");
+        assert_eq!(out[1].url, "https://github.com/rust-lang/rust");
+    }
+
+    #[test]
+    fn query_has_latin_detects_ascii_only() {
+        assert!(query_has_latin("hello"));
+        assert!(query_has_latin("SVE инструкции"));
+        assert!(!query_has_latin("Привет мир"));
+        assert!(!query_has_latin("12345"));
     }
 }

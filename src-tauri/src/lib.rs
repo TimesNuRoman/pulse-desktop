@@ -33,7 +33,7 @@
 
 mod agent;
 pub mod engine;
-mod web_search;
+pub mod web_search;
 mod youtube;
 
 use serde::{Deserialize, Serialize};
