@@ -22,6 +22,16 @@ import type { ContentPart, LLMMessage } from '../llm/types';
 import type { STTEngine } from '../voice/stt';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { loadAttachment, type Attachment } from '../files/attachments';
+// R89: Smart Engine v3 low_confidence UI consumer.
+import type { RoutingMode } from '../llm/route';
+import {
+  formatChipText,
+  formatModalTitle,
+  routingModeCategory,
+  explainLowConfidence,
+  readRoutingOverride,
+  writeRoutingOverride,
+} from '../llm/routing-ui';
 
 const SEED: ChatMessage = {
   id: 'seed-1',
@@ -125,6 +135,16 @@ export function ChatView() {
       return next;
     });
   }
+  // R89: routing override modal state. Открывается по клику на chip'е
+  // "low_confidence" ассистент-сообщения. `messageId` нужно чтобы
+  // показать original prompt в modal.
+  const [routingModal, setRoutingModal] = useState<{
+    messageId: string;
+    mode: RoutingMode;
+  } | null>(null);
+  // R89: последний выбранный override (из localStorage). Применяется как
+  // suggested mode в modal — "Last time you picked QuickAnswer".
+  const [lastOverride] = useState<RoutingMode | null>(() => readRoutingOverride());
 
   // Автоскролл к последнему сообщению
   useEffect(() => {
@@ -302,6 +322,18 @@ export function ChatView() {
             out.content = `⚠ ${result.error}`;
           } else if (!m.content && result.toolCalls.length === 0) {
             out.content = '_(пустой ответ от LLM)_';
+          }
+          // R89: прикрепляем routing decision к сообщению. ChatView использует
+          // `m.routing?.lowConfidence` чтобы решить, рисовать ли chip.
+          // Только если есть routing (Tauri) и не cancelled/error (там чип
+          // будет шумом).
+          if (
+            result.routing &&
+            result.finishReason !== 'cancelled' &&
+            result.finishReason !== 'error'
+          ) {
+            out.routing = result.routing;
+            out.routingMode = result.routingMode;
           }
           return out;
         }),
@@ -544,6 +576,10 @@ export function ChatView() {
             key={m.id}
             className={`chat__bubble chat__bubble--${m.role}${
               m.toolCall ? ' chat__bubble--tool' : ''
+            }${
+              m.routing?.lowConfidence
+                ? ' chat__bubble--low-confidence'
+                : ''
             }`}
             data-role={m.role}
           >
@@ -558,6 +594,25 @@ export function ChatView() {
                 </span>
               )}
             </div>
+            {/* R89: low_confidence chip — показывается только если движок
+                не был уверен в routing'е. Клик открывает modal с деталями
+                и override-опциями. Стили — Tokyo Night (см. styles.css). */}
+            {m.routing?.lowConfidence && m.routingMode && (
+              <button
+                type="button"
+                className="chat__chip chat__chip--low"
+                onClick={() =>
+                  setRoutingModal({ messageId: m.id, mode: m.routingMode! })
+                }
+                title="Smart Engine не был уверен в выборе модели. Клик — детали."
+                data-testid="low-confidence-chip"
+              >
+                <span className="chat__chip-dot" aria-hidden />
+                <span className="chat__chip-text">
+                  {formatChipText(m.routingMode)}
+                </span>
+              </button>
+            )}
             {/* Tool-call bubble: показываем "что Pulse делает" */}
             {m.toolCall && (
               <div className="chat__toolcall" data-pending={m.toolCall.pending ? '1' : '0'}>
@@ -805,6 +860,179 @@ export function ChatView() {
           </button>
         )}
       </form>
+
+      {/* R89: routing override modal. Показывается по клику на chip'е
+          low_confidence. Позволяет юзеру выбрать preferred mode для
+          следующих промптов (saved to localStorage). Не реально переключает
+          routing — это scope R90+ (нужно пробрасывать modelOverride в
+          streamChat и engine_decide). R89 фиксирует только preference. */}
+      {routingModal && (
+        <RoutingOverrideModal
+          mode={routingModal.mode}
+          // Показываем original prompt — ищем user-message прямо перед
+          // assistant-сообщением с chip'ом. Fallback на '...' если не нашли.
+          prompt={(() => {
+            const idx = messages.findIndex((m) => m.id === routingModal.messageId);
+            for (let i = idx - 1; i >= 0; i--) {
+              if (messages[i].role === 'user') return messages[i].content;
+            }
+            return '...';
+          })()}
+          // Confidence signals из routing decision
+          signals={(() => {
+            const m = messages.find((mm) => mm.id === routingModal.messageId);
+            const r = m?.routing;
+            return r
+              ? {
+                  codeParseSignal: r.codeParseSignal,
+                  fired: r.fired,
+                  score: r.score,
+                  threshold: r.threshold,
+                }
+              : null;
+          })()}
+          lastOverride={lastOverride}
+          onClose={() => setRoutingModal(null)}
+          onPickOverride={(mode) => {
+            writeRoutingOverride(mode);
+            setRoutingModal(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── R89: RoutingOverrideModal ───────────────────────────────────────────
+
+interface RoutingOverrideModalProps {
+  mode: RoutingMode;
+  prompt: string;
+  signals: {
+    codeParseSignal: boolean;
+    fired: string[];
+    score: number;
+    threshold: number;
+  } | null;
+  lastOverride: RoutingMode | null;
+  onClose: () => void;
+  onPickOverride: (mode: RoutingMode) => void;
+}
+
+/**
+ * Modal для low_confidence override'а. Показывает:
+ *   * Заголовок "Why {mode}?"
+ *   * Original prompt (truncated до 280 chars)
+ *   * Routing decision (preferredModel, score/threshold)
+ *   * Объяснение low_confidence причины
+ *   * "Use {mode} next time" / "Use QuickAnswer next time" / "Dismiss" кнопки
+ *
+ * Не реально меняет routing (это R90+). R89: только preference persistence.
+ */
+function RoutingOverrideModal(props: RoutingOverrideModalProps) {
+  const { mode, prompt, signals, lastOverride, onClose, onPickOverride } = props;
+  // Список альтернативных mode'ов для override (все 5, кроме текущего).
+  const allModes: RoutingMode[] = ['CodeEdit', 'Vision', 'QuickAnswer', 'Reasoning', 'Default'];
+  const alternatives = allModes.filter((m) => m !== mode);
+  return (
+    <div
+      className="chat__modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="routing-modal-title"
+      onClick={onClose}
+      data-testid="routing-modal"
+    >
+      <div
+        className="chat__modal"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="chat__modal-head">
+          <h3 id="routing-modal-title" className="chat__modal-title">
+            {formatModalTitle(mode)}
+          </h3>
+          <button
+            type="button"
+            className="chat__modal-close"
+            onClick={onClose}
+            aria-label="Закрыть"
+            title="Закрыть"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="chat__modal-body">
+          <div className="chat__modal-section">
+            <div className="chat__modal-label">Original prompt</div>
+            <div className="chat__modal-prompt">
+              {truncate(prompt, 280)}
+            </div>
+          </div>
+          <div className="chat__modal-section">
+            <div className="chat__modal-label">Routed to</div>
+            <div className="chat__modal-mode">
+              <span className="chat__chip-dot" aria-hidden />
+              {mode}
+              <span className="chat__modal-mode-cat">
+                — {routingModeCategory(mode)}
+              </span>
+            </div>
+          </div>
+          <div className="chat__modal-section">
+            <div className="chat__modal-label">Confidence</div>
+            <div className="chat__modal-confidence">
+              {signals ? (
+                <>
+                  <div className="chat__modal-confline">
+                    {explainLowConfidence(signals)}
+                  </div>
+                  <div className="chat__modal-confmeta">
+                    Score {signals.score}/{signals.threshold}
+                    {signals.fired.length > 0 && ` · ${signals.fired.join(', ')}`}
+                  </div>
+                </>
+              ) : (
+                <div className="chat__modal-confline">No routing data available.</div>
+              )}
+            </div>
+          </div>
+          {lastOverride && lastOverride !== mode && (
+            <div className="chat__modal-section">
+              <div className="chat__modal-label">Last override</div>
+              <div className="chat__modal-last-override">
+                Вы выбрали <b>{lastOverride}</b> в прошлый раз. Сохранить текущий ({mode}) как новый override?
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="chat__modal-foot">
+          <button
+            type="button"
+            className="chat__modalbtn chat__modalbtn--ghost"
+            onClick={onClose}
+          >
+            Dismiss
+          </button>
+          {alternatives.map((alt) => (
+            <button
+              key={alt}
+              type="button"
+              className={`chat__modalbtn chat__modalbtn--pick${
+                lastOverride === alt ? ' is-prev' : ''
+              }`}
+              onClick={() => onPickOverride(alt)}
+              data-testid={`pick-${alt}`}
+              title={
+                lastOverride === alt
+                  ? `Use ${alt} next time (also your previous pick)`
+                  : `Use ${alt} next time`
+              }
+            >
+              {lastOverride === alt ? `Use ${alt} (last pick)` : `Use ${alt}`}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

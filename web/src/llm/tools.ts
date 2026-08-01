@@ -178,6 +178,12 @@ export interface AgentLoopResult {
   finishReason: 'stop' | 'length' | 'cancelled' | 'error' | 'max-steps';
   error?: string;
   toolCalls: Array<{ tool: string; args: Record<string, unknown>; result: string | null; error: string | null }>;
+  /** R89: routing decision от Smart Engine v3. Pass-through из streamChat.
+   *  ChatView использует `result.routing?.lowConfidence` чтобы показать
+   *  chip с override-опциями. См. `llm/route.ts::EngineDecision`. */
+  routing?: import('./route').EngineDecision;
+  /** R89: human-readable routing mode. Pass-through из streamChat. */
+  routingMode?: import('./route').RoutingMode;
 }
 
 /**
@@ -199,6 +205,9 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       text: r.text,
       finishReason: r.finishReason,
       toolCalls: [],
+      // R89: pass-through routing decision (low_confidence flag → UI chip).
+      routing: r.routing,
+      routingMode: r.routingMode,
     };
   } catch (e) {
     const msg = e instanceof LLMError ? e.message : `Ошибка: ${(e as Error).message}`;

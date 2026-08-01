@@ -556,6 +556,31 @@ pub fn auto_prefer(input: &TaskInput, fallback_model: &str, settings: &EngineSet
     }
 }
 
+/// R89: маппинг `preferred_model` → human-readable routing mode для UI.
+///
+/// Используется фронтом (ChatView) чтобы показать "Smart Engine выбрал:
+/// CodeEdit / Vision / QuickAnswer / Reasoning / Default" в chip'е при
+/// `low_confidence=true` (R86 finding: engine has the flag but UI ignores
+/// it, users get routed silently).
+///
+/// Маппинг стабильный — расширяем только при добавлении нового
+/// preferred_model в `auto_prefer`. Unknown значения фолбэчат на
+/// "Default" (на случай если кто-то переопределил env VITE_LLM_MODEL на
+/// нестандартное имя).
+///
+/// Возвращает `&'static str` чтобы не аллоцировать на каждый chip — это
+/// hot-path: каждый chat-message проходит через маппинг.
+pub fn routing_mode_for(model: &str) -> &'static str {
+    match model {
+        "code" => "CodeEdit",
+        "vision" => "Vision",
+        "fast" => "QuickAnswer",
+        "large" => "Reasoning",
+        // "default" + любое unknown (custom VITE_LLM_MODEL имя) → Default
+        _ => "Default",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1001,5 +1026,71 @@ mod tests {
         );
         assert!(!d.low_confidence, "parser-confirmed code = high confidence");
         assert!(d.fired.iter().any(|f| f == "code-parse-confirmed"));
+    }
+
+    // ── R89: routing_mode_for + EngineDecision serialization (low_confidence UI) ──
+
+    /// R89: routing_mode_for маппит все 5 preferred_model на UI-friendly имена.
+    /// Покрывает все ветки match: code/vision/fast/large/default + unknown fallback.
+    #[test]
+    fn r89_routing_mode_for_maps_all_models() {
+        assert_eq!(routing_mode_for("code"), "CodeEdit");
+        assert_eq!(routing_mode_for("vision"), "Vision");
+        assert_eq!(routing_mode_for("fast"), "QuickAnswer");
+        assert_eq!(routing_mode_for("large"), "Reasoning");
+        assert_eq!(routing_mode_for("default"), "Default");
+        // unknown / custom VITE_LLM_MODEL → Default
+        assert_eq!(routing_mode_for("gemma3:4b"), "Default");
+        assert_eq!(routing_mode_for("custom-model-7b"), "Default");
+        assert_eq!(routing_mode_for(""), "Default");
+    }
+
+    /// R89: EngineDecision сериализует low_confidence + code_parse_signal
+    /// в JSON (нужно для frontend, чтобы Tauri-команда вернула оба флага
+    /// на фронт без round-trip). Default = false для old serializations.
+    #[test]
+    fn r89_engine_decision_serializes_low_confidence_and_parse_signal() {
+        let d = EngineDecision {
+            preferred_model: "code".to_string(),
+            fallback_model: "default".to_string(),
+            fired: vec!["code-edit".to_string(), "code-parse-pending".to_string()],
+            score: 8,
+            threshold: 5,
+            flipped: true,
+            code_parse_signal: false,
+            low_confidence: true,
+        };
+        let json = serde_json::to_string(&d).expect("serialize");
+        // Проверяем что ОБА флага попали в JSON (R86 follow-up: low_confidence
+        // был потерян в round-trip до R82).
+        assert!(json.contains("\"low_confidence\":true"), "got: {json}");
+        assert!(
+            json.contains("\"code_parse_signal\":false"),
+            "got: {json}"
+        );
+        assert!(json.contains("\"flipped\":true"), "got: {json}");
+        assert!(json.contains("\"preferred_model\":\"code\""), "got: {json}");
+    }
+
+    /// R89: end-to-end R86-style low_confidence флаг доезжает до EngineDecision.
+    /// Это ключевое: если UI consumer сломан, чип не покажется. R86 finding
+    /// был что flag есть в engine но не surfaced. Этот тест доказывает что
+    /// сам флаг работает end-to-end.
+    #[test]
+    fn r89_r86_followup_low_confidence_flag_fires_in_decision() {
+        // R86 Eval Harness: 23/25 code-edit prompts flagged low_confidence.
+        // Воспроизводим типичный low_conf кейс: marker+category+verb, parser
+        // не подтвердил.
+        let prompt = "напиши функцию которая делает X";
+        let d = auto_prefer(
+            &make_input(prompt, false, Some(TaskCategory::CodeEdit)),
+            "default",
+            &default_settings(),
+        );
+        assert!(d.flipped, "should flip on marker+cat+verb: {:?}", d);
+        assert!(d.low_confidence, "R86 finding: should fire low_confidence: {:?}", d);
+        // И сам флаг сериализуется — без этого UI не получит сигнал
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(json.contains("\"low_confidence\":true"));
     }
 }

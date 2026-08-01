@@ -45,6 +45,6 @@ pub use parser::{CodeLanguage, CodeParser, ParseResult};
 pub use smart_engine::{
     auto_prefer, detect_code_markers, detect_tool_call_pattern, extract_features, EngineDecision,
     EngineFeatures, EngineSettings, TaskCategory, TaskInput, MAX_THRESHOLD, MIN_THRESHOLD,
-    PASS_THRESHOLD,
+    PASS_THRESHOLD, routing_mode_for,
 };
 pub use tasks::{synthesize_tasks, SynthTask};

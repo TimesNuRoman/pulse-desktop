@@ -95,6 +95,25 @@ export interface ChatMessage {
    * `toLLMMessages`. Не путать с `content` (это то, что видит юзер).
    */
   searchContext?: string;
+  /**
+   * R89: routing decision от Smart Engine v3 для ассистент-сообщений.
+   * Если `routing.lowConfidence === true` — ChatView рисует chip над
+   * контентом: "Smart Engine wasn't sure — routed to {routingMode}".
+   * Юзер может кликнуть и переопределить routing для следующего промпта.
+   * type-only re-import чтобы не тащить весь `route` сюда (избегаем циклов).
+   */
+  routing?: {
+    preferredModel: string;
+    fallbackModel: string;
+    fired: string[];
+    score: number;
+    threshold: number;
+    flipped: boolean;
+    codeParseSignal: boolean;
+    lowConfidence: boolean;
+  };
+  /** R89: human-readable routing mode ("CodeEdit" | "Vision" | "QuickAnswer" | "Reasoning" | "Default"). */
+  routingMode?: 'CodeEdit' | 'Vision' | 'QuickAnswer' | 'Reasoning' | 'Default';
 }
 
 // ─── Pulse v5 — agentic AI ────────────────────────────────────────────────

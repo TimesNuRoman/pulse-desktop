@@ -26,6 +26,12 @@ import type {
 } from './types';
 import { hasImageContent, messagesHaveImages } from './types';
 import { PULSE_SYSTEM_PROMPT } from './prompts';
+// R89: Smart Engine v3 routing decision (low_confidence flag для UI chip).
+// Вызываем параллельно с Ollama fetch — добавляет ~5ms latency только
+// в Tauri-runtime, на web/mobile no-op. Engine decision нужен ПОСЛЕ стрима
+// (когда UI рендерит чип), поэтому можно дёргать после fetch — не блокирует
+// первый chunk.
+import { engineDecide, routingModeFor } from './route';
 
 const DEFAULT_BASE_URL = 'http://127.0.0.1:11434/v1';
 const DEFAULT_TEXT_MODEL = 'gemma2:2b';
@@ -262,6 +268,22 @@ export async function streamChat(
     switchedToVision = r.switchedToVision;
   }
 
+  // R89: дёргаем engine_decide ПАРАЛЛЕЛЬНО с fetch. Решение нужно только
+  // ПОСЛЕ стрима (для UI chip'а), поэтому не блокирует первый chunk.
+  // На web/mobile — мгновенный no-op (engineDecide возвращает default).
+  // На Tauri — IPC roundtrip к Rust Smart Engine (~5ms).
+  //
+  // Берём текст ПОСЛЕДНЕГО user-сообщения — это то, что auto_prefer
+  // реально анализирует (маркеры кода, длина, Russian verbs).
+  const lastUserText = extractLastUserText(messages);
+  const hasImage = messagesHaveImages(messages);
+  const routingP = engineDecide(lastUserText, modelToUse, hasImage, '').catch(
+    // engine_decide не критичен для chat'а — если сломан (нет Tauri,
+    // ошибка IPC, таймаут), чип просто не покажется. Никогда не throw'им
+    // в streamChat.
+    () => undefined,
+  );
+
   const body = {
     model: modelToUse,
     messages,
@@ -326,6 +348,32 @@ export async function streamChat(
   let buffer = '';
   let text = '';
 
+  // R89 helper: ждём routing decision (или no-op) и собираем финальный
+  // StreamResult. Таймаут 200ms — на мобильном/web engineDecide no-op
+  // мгновенный, на Tauri обычно < 10ms; 200ms это safety net для
+  // зависшего IPC.
+  const buildResult = async (
+    finishReason: 'stop' | 'length' | 'cancelled' | 'error',
+    finalText: string,
+    errMsg?: string,
+  ): Promise<StreamResult> => {
+    const routing = await Promise.race([
+      routingP,
+      new Promise<undefined>((r) => setTimeout(() => r(undefined), 200)),
+    ]);
+    const r: StreamResult = {
+      text: finalText,
+      finishReason,
+      usedModel: modelToUse,
+    };
+    if (routing) {
+      r.routing = routing;
+      r.routingMode = routingModeFor(routing.preferredModel);
+    }
+    if (errMsg) r.error = errMsg;
+    return r;
+  };
+
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -341,15 +389,15 @@ export async function streamChat(
             onChunk(delta);
           }
           if (choice.finish_reason === 'length') {
-            return { text, finishReason: 'length', usedModel: modelToUse };
+            return await buildResult('length', text);
           }
         }
       }
     }
-    return { text, finishReason: 'stop', usedModel: modelToUse };
+    return await buildResult('stop', text);
   } catch (e) {
     if (req.signal?.aborted) {
-      return { text, finishReason: 'cancelled', usedModel: modelToUse };
+      return await buildResult('cancelled', text);
     }
     throw new LLMError(null, `Стрим оборвался: ${(e as Error).message}`);
   } finally {
@@ -359,6 +407,28 @@ export async function streamChat(
       /* ignore */
     }
   }
+}
+
+/**
+ * R89: извлечь текст последнего user-сообщения из history для engine_decide.
+ * Smart Engine v3 анализирует именно последний user-message (маркеры кода,
+ * длина, Russian edit verbs) — не всю историю.
+ *
+ * @param messages  массив LLMMessage (включая system)
+ * @returns         текст последнего user-message, или '' если нет user'а
+ */
+function extractLastUserText(messages: LLMMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role !== 'user') continue;
+    if (typeof m.content === 'string') return m.content;
+    // content — массив ContentPart. Берём первый text-блок.
+    for (const part of m.content) {
+      if (part.type === 'text') return part.text;
+    }
+    return '';
+  }
+  return '';
 }
 
 // ─── Vision capability detection (для UI badge) ───────────────────────────

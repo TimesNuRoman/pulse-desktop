@@ -56,6 +56,11 @@ export interface ChatRequest {
 /** Колбэк на каждый пришедший чанк текста. */
 export type StreamChunk = (delta: string) => void;
 
+/** Решение Smart Engine v3 (R86/R89). Тип живёт в `route.ts`, тут
+ *  re-export'им чтобы StreamResult мог его использовать без циклических
+ *  импортов. Сам импорт type-only (см. import ниже). */
+import type { EngineDecision, RoutingMode } from './route';
+
 /** Финальный результат стрима: полный накопленный текст + причина завершения. */
 export interface StreamResult {
   /** Весь текст, собранный из дельт. */
@@ -66,6 +71,12 @@ export interface StreamResult {
   error?: string;
   /** Какая модель реально была использована (после vision-выбора). */
   usedModel?: string;
+  /** R89: routing decision от Smart Engine v3. Если `lowConfidence=true` —
+   *  ChatView должен показать chip с override-опциями. Может быть undefined
+   *  если engine_decide не сработал (нет Tauri / ошибка / cancelled). */
+  routing?: EngineDecision;
+  /** R89: human-readable routing mode ("CodeEdit" | "Vision" | ...). */
+  routingMode?: RoutingMode;
 }
 
 // ─── Vision helpers ───────────────────────────────────────────────────────

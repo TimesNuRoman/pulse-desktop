@@ -443,6 +443,12 @@ fn engine_decide(
 ///   * response: текст ответа от Ollama
 ///   * latency_ms: время routing + HTTP call
 ///   * log_written: true если запись в ab.jsonl прошла
+///
+/// R89: добавлен `routing_mode` — human-readable имя выбранного режима
+/// ("CodeEdit" | "Vision" | "QuickAnswer" | "Reasoning" | "Default").
+/// Нужен для UI chip'а когда `decision.low_confidence == true` — чтобы
+/// ChatView показывал "Smart Engine wasn't sure — routed to CodeEdit"
+/// без ручного маппинга на фронте.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InvokeResult {
     pub decision: engine::EngineDecision,
@@ -452,6 +458,8 @@ pub struct InvokeResult {
     pub http_ms: u64,
     pub log_written: bool,
     pub log_path: Option<String>,
+    /// R89: human-readable routing mode (см. engine::routing_mode_for).
+    pub routing_mode: String,
 }
 
 #[tauri::command]
@@ -479,9 +487,12 @@ async fn engine_invoke(
 
     // 2. Ollama call.
     let ollama = ollama_url.unwrap_or_else(|| "http://127.0.0.1:11434".to_string());
-    let model = &decision.preferred_model;
+    // R89: clone model name — нужна и для ollama_generate, и для routing_mode
+    // ниже (decision потом move'ится в InvokeResult, borrow checker не даёт
+    // держать &-ссылку после move). Clone ~ 16B на каждое invoke, терпимо.
+    let model = decision.preferred_model.clone();
     let http_start = std::time::Instant::now();
-    let response = ollama_generate(&ollama, model, &user_text, has_image).await?;
+    let response = ollama_generate(&ollama, &model, &user_text, has_image).await?;
     let http_ms = http_start.elapsed().as_millis() as u64;
     let latency_ms = start_total.elapsed().as_millis() as u64;
 
@@ -499,7 +510,7 @@ async fn engine_invoke(
         task_id: task_id.clone(),
         category: category.clone().unwrap_or_else(|| "chat".to_string()),
         path: "v3".to_string(),
-        model: model.to_string(),
+        model: model.clone(),
         latency_ms,
         passed: !response.is_empty(),
         score: decision.score,
@@ -524,6 +535,7 @@ async fn engine_invoke(
         http_ms,
         log_written,
         log_path: Some(log_path.to_string_lossy().to_string()),
+        routing_mode: engine::routing_mode_for(&model).to_string(),
     })
 }
 
