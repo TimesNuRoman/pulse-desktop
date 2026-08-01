@@ -192,6 +192,43 @@ fn classify_source(url: &str) -> (&'static str, &'static str) {
     if host.contains("developer.mozilla.org") || host == "mdn.io" {
         return ("general", "MDN");
     }
+    // Частые tech-источники, которые раньше падали в "Web".
+    if host.contains("news.ycombinator.com") {
+        return ("general", "Hacker News");
+    }
+    if host.contains("arxiv.org") {
+        return ("general", "arXiv");
+    }
+    if host.contains("dev.to") {
+        return ("general", "DEV.to");
+    }
+    if host.contains("medium.com") {
+        return ("general", "Medium");
+    }
+    if host.contains("youtube.com") || host == "youtu.be" {
+        return ("general", "YouTube");
+    }
+    if host.contains("twitter.com") || host == "x.com" {
+        return ("general", "X/Twitter");
+    }
+    if host.contains("linkedin.com") {
+        return ("general", "LinkedIn");
+    }
+    if host.contains("docs.rs") {
+        return ("general", "docs.rs");
+    }
+    if host.contains("crates.io") {
+        return ("general", "crates.io");
+    }
+    if host.contains("npmjs.com") {
+        return ("general", "npm");
+    }
+    if host.contains("pypi.org") {
+        return ("general", "PyPI");
+    }
+    if host.contains("developer.arm.com") {
+        return ("general", "Arm Developer");
+    }
     ("general", "Web")
 }
 
@@ -819,6 +856,30 @@ mod tests {
         assert_eq!(
             classify_source("https://github.com/rust-lang/rust"),
             ("general", "GitHub")
+        );
+    }
+
+    #[test]
+    fn classify_common_tech_sources() {
+        assert_eq!(
+            classify_source("https://news.ycombinator.com/item?id=1"),
+            ("general", "Hacker News")
+        );
+        assert_eq!(
+            classify_source("https://arxiv.org/abs/2401.00001"),
+            ("general", "arXiv")
+        );
+        assert_eq!(
+            classify_source("https://docs.rs/serde/latest/serde/"),
+            ("general", "docs.rs")
+        );
+        assert_eq!(
+            classify_source("https://www.youtube.com/watch?v=xyz"),
+            ("general", "YouTube")
+        );
+        assert_eq!(
+            classify_source("https://x.com/user/status/123"),
+            ("general", "X/Twitter")
         );
     }
 
