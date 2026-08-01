@@ -32,6 +32,7 @@
 //  - Индексация (Tantivy/sqlite-fts) — это v6
 
 mod agent;
+pub mod engine;
 mod web_search;
 mod youtube;
 

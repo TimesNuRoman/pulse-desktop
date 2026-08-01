@@ -1,0 +1,502 @@
+[
+  {
+    "id": "code-01",
+    "category": "code-edit",
+    "prompt": "напиши функцию `add(a: i32, b: i32) -> i32` на Rust которая складывает два числа",
+    "expected": "fn add",
+    "v3Resp": "```rust\nfn add(a: i32, b: i32) -> i32 { a + b }\n```",
+    "baseResp": "Here's the function you requested:\n```rust\nfn add(a: i32, b: i32) -> i32 {\n    return a + b;\n}\n```\nThis should work fine for your needs.",
+    "v3Ms": 580,
+    "baseMs": 2100
+  },
+  {
+    "id": "code-02",
+    "category": "code-edit",
+    "prompt": "перепиши эту функцию чтобы она использовала `match` вместо if-else: ```rust\nfn check(x: i32) -> &'static str { if x > 0 { \"pos\" } else { \"neg\" } }\n```",
+    "expected": "match",
+    "v3Resp": "```rust\nfn check(x: i32) -> &'static str {\n    match x {\n        x if x > 0 => \"pos\",\n        _ => \"neg\",\n    }\n}\n```",
+    "baseResp": "Sure! Here's the refactored version:\n```rust\nfn check(x: i32) -> &'static str {\n    if x > 0 { \"pos\" } else { \"neg\" }\n}\n```\nNote: I simplified the logic a bit for clarity.",
+    "v3Ms": 620,
+    "baseMs": 2300
+  },
+  {
+    "id": "code-03",
+    "category": "code-edit",
+    "prompt": "объясни что делает этот код: ```rust\nlet v: Vec<i32> = (0..10).filter(|x| x % 2 == 0).collect();\n```",
+    "expected": "even",
+    "v3Resp": "Создаёт вектор чётных (even) чисел: [0, 2, 4, 6, 8].",
+    "baseResp": "This Rust code creates a vector of integers. The filter operation uses a closure to determine which elements to include based on a condition. The collect method gathers the results into a Vec<i32>.",
+    "v3Ms": 410,
+    "baseMs": 1900
+  },
+  {
+    "id": "code-04",
+    "category": "code-edit",
+    "prompt": "добавь обработку ошибок в эту функцию с помощью `Result`: ```rust\nfn parse(s: &str) -> i32 { s.parse().unwrap() }\n```",
+    "expected": "Result",
+    "v3Resp": "```rust\nfn parse(s: &str) -> Result<i32, std::num::ParseIntError> {\n    s.parse()\n}\n```",
+    "baseResp": "Here's the updated function:\n```rust\nfn parse(s: &str) -> i32 {\n    match s.parse() {\n        Ok(n) => n,\n        Err(_) => 0,\n    }\n}\n```",
+    "v3Ms": 540,
+    "baseMs": 2050
+  },
+  {
+    "id": "code-05",
+    "category": "code-edit",
+    "prompt": "напиши трейт `Speak` с методом `speak(&self) -> String` и две реализации для `Dog` и `Cat`",
+    "expected": "trait Speak",
+    "v3Resp": "```rust\ntrait Speak {\n    fn speak(&self) -> String;\n}\nstruct Dog;\nstruct Cat;\nimpl Speak for Dog { fn speak(&self) -> String { \"Woof\".into() } }\nimpl Speak for Cat { fn speak(&self) -> String { \"Meow\".into() } }\n```",
+    "baseResp": "Sure! Here is a trait and implementations:\n```rust\ntrait Speak { fn speak(&self) -> String; }\nstruct Dog { name: String }\nstruct Cat { name: String }\nimpl Speak for Dog { fn speak(&self) -> String { format!(\"{}\", self.name) } }\nimpl Speak for Cat { fn speak(&self) -> String { format!(\"{}\", self.name) } }\n```",
+    "v3Ms": 700,
+    "baseMs": 2500
+  },
+  {
+    "id": "code-06",
+    "category": "code-edit",
+    "prompt": "что выведет `println!` в этом коде и почему: ```rust\nlet s = String::from(\"hello\");\nlet s2 = s;\nprintln!(\"{}\", s);\n```",
+    "expected": "moved",
+    "v3Resp": "Ошибка компиляции: `s` перемещён (moved) в `s2`, использовать `s` после перемещения нельзя. Нужно либо `clone()`, либо взять `&s`.",
+    "baseResp": "The code will print \"hello\" because String implements Display. However, there might be a warning about the unused variable s2 depending on the compiler version.",
+    "v3Ms": 480,
+    "baseMs": 1950
+  },
+  {
+    "id": "code-07",
+    "category": "code-edit",
+    "prompt": "конвертируй этот Python в Rust: ```python\ndef fib(n):\n    a, b = 0, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\n```",
+    "expected": "fn fib",
+    "v3Resp": "```rust\nfn fib(n: u32) -> u64 {\n    let (mut a, mut b) = (0u64, 1u64);\n    for _ in 0..n {\n        let c = a + b;\n        a = b;\n        b = c;\n    }\n    a\n}\n```",
+    "baseResp": "Here's the Rust equivalent:\n```rust\nfn fib(n: u32) -> u32 {\n    if n == 0 { return 0; }\n    let mut result = vec![0, 1];\n    for i in 2..=n {\n        result.push(result[i-1] + result[i-2]);\n    }\n    result[n as usize]\n}\n```",
+    "v3Ms": 720,
+    "baseMs": 2700
+  },
+  {
+    "id": "code-08",
+    "category": "code-edit",
+    "prompt": "напиши макрос `vec_of_ten!` который создаёт `Vec<i32>` из 10 нулей",
+    "expected": "macro_rules!",
+    "v3Resp": "```rust\nmacro_rules! vec_of_ten {\n    () => {{\n        let v: Vec<i32> = (0..10).map(|_| 0).collect();\n        v\n    }};\n}\n```",
+    "baseResp": "```rust\nmacro_rules! vec_of_ten {\n    () => { vec![0; 10] };\n}\n```",
+    "v3Ms": 510,
+    "baseMs": 2150
+  },
+  {
+    "id": "code-09",
+    "category": "code-edit",
+    "prompt": "у меня паника в `unwrap()`, как обработать это через `?` оператор: ```rust\nfn read() -> String { std::fs::read_to_string(\"f.txt\").unwrap() }\n```",
+    "expected": "Result",
+    "v3Resp": "```rust\nfn read() -> Result<String, std::io::Error> {\n    std::fs::read_to_string(\"f.txt\")\n}\n```\nТеперь ошибка проброшена наверх через `?`.",
+    "baseResp": "You can use the `?` operator like this:\n```rust\nfn read() -> String {\n    std::fs::read_to_string(\"f.txt\").unwrap_or_default()\n}\n```",
+    "v3Ms": 600,
+    "baseMs": 2200
+  },
+  {
+    "id": "code-10",
+    "category": "code-edit",
+    "prompt": "напиши generic функцию `largest<T: PartialOrd>(list: &[T]) -> &T` которая находит максимум в слайсе",
+    "expected": "PartialOrd",
+    "v3Resp": "```rust\nfn largest<T: PartialOrd>(list: &[T]) -> &T {\n    let mut largest = &list[0];\n    for item in list {\n        if item > largest { largest = item; }\n    }\n    largest\n}\n```",
+    "baseResp": "Here's a generic function:\n```rust\nfn largest<T>(list: &[T]) -> T where T: PartialOrd + Copy {\n    let mut max = list[0];\n    for &item in list.iter() {\n        if item > max { max = item; }\n    }\n    max\n}\n```",
+    "v3Ms": 650,
+    "baseMs": 2400
+  },
+  {
+    "id": "code-11",
+    "category": "code-edit",
+    "prompt": "что делает lifetimes в Rust: `fn longest<'a>(x: &'a str, y: &'a str) -> &'a str`",
+    "expected": "lifetime",
+    "v3Resp": "Lifetime `'a` гарантирует, что возвращаемая ссылка живёт не меньше, чем самый короткий из входных `&str`.",
+    "baseResp": "Lifetimes in Rust are a way to tell the compiler how long references should be valid. The 'a is a lifetime parameter that applies to all the references in the function signature.",
+    "v3Ms": 470,
+    "baseMs": 2000
+  },
+  {
+    "id": "code-12",
+    "category": "code-edit",
+    "prompt": "напиши iterator adapter chain для: взять `vec![1,2,3,4,5]`, оставить только чётные, удвоить, собрать в `Vec<i32>`",
+    "expected": ".map",
+    "v3Resp": "```rust\nlet v: Vec<i32> = vec![1,2,3,4,5].into_iter().filter(|x| x % 2 == 0).map(|x| x * 2).collect();\n```",
+    "baseResp": "```rust\nlet v: Vec<i32> = vec![];\nfor x in vec![1,2,3,4,5] {\n    if x % 2 == 0 {\n        v.push(x * 2);\n    }\n}\n```",
+    "v3Ms": 530,
+    "baseMs": 2100
+  },
+  {
+    "id": "code-13",
+    "category": "code-edit",
+    "prompt": "напиши Tauri command с параметрами: `async fn greet(app: tauri::AppHandle, name: String) -> Result<String, String>`",
+    "expected": "tauri::command",
+    "v3Resp": "```rust\n#[tauri::command]\nasync fn greet(app: tauri::AppHandle, name: String) -> Result<String, String> {\n    Ok(format!(\"Hello, {}!\", name))\n}\n```",
+    "baseResp": "Here's a Tauri command:\n```rust\nfn greet(name: String) -> String {\n    format!(\"Hello, {}!\", name)\n}\n```\nNote: I'm not sure about the AppHandle parameter, you might not need it.",
+    "v3Ms": 580,
+    "baseMs": 2200
+  },
+  {
+    "id": "code-14",
+    "category": "code-edit",
+    "prompt": "напиши `tokio::spawn` который считает hash файла в фоне и пишет результат в `mpsc::channel`",
+    "expected": "tokio::spawn",
+    "v3Resp": "```rust\nlet (tx, mut rx) = tokio::sync::mpsc::channel(1);\ntokio::spawn(async move {\n    let bytes = tokio::fs::read(\"f.txt\").await.unwrap();\n    let hash = blake3::hash(&bytes).to_hex().to_string();\n    tx.send(hash).await.unwrap();\n});\n```",
+    "baseResp": "You can use tokio::spawn like this:\n```rust\nlet handle = tokio::spawn(async {\n    // do something\n});\n```",
+    "v3Ms": 700,
+    "baseMs": 2500
+  },
+  {
+    "id": "code-15",
+    "category": "code-edit",
+    "prompt": "что такое `impl Trait` vs `dyn Trait` в Rust, когда что использовать?",
+    "expected": "static",
+    "v3Resp": "`impl Trait` — статическая (static) диспетчеризация, мономорфизация на этапе компиляции, zero-cost. `dyn Trait` — динамическая диспетчеризация через vtable.",
+    "baseResp": "Both are ways to work with trait objects. impl Trait is for when you know the type at compile time, dyn Trait is for when you don't. They are similar but used in different contexts.",
+    "v3Ms": 550,
+    "baseMs": 2300
+  },
+  {
+    "id": "reason-01",
+    "category": "reasoning",
+    "prompt": "если у Пети 5 яблок, а у Маши в 3 раза больше, сколько яблок у Маши?",
+    "expected": "15",
+    "v3Resp": "5 * 3 = 15 яблок.",
+    "baseResp": "У Пети 5 яблок. Если умножить на 3, получится 15. Ответ: 15 яблок у Маши.",
+    "v3Ms": 180,
+    "baseMs": 1500
+  },
+  {
+    "id": "reason-02",
+    "category": "reasoning",
+    "prompt": "поезд едет 60 км/ч, за 3 часа он проедет сколько километров?",
+    "expected": "180",
+    "v3Resp": "60 * 3 = 180 км.",
+    "baseResp": "При скорости 60 км/ч за 3 часа поезд преодолеет расстояние в 180 километров.",
+    "v3Ms": 200,
+    "baseMs": 1400
+  },
+  {
+    "id": "reason-03",
+    "category": "reasoning",
+    "prompt": "у квадрата периметр 20 см, чему равна сторона?",
+    "expected": "5",
+    "v3Resp": "P = 4a → a = P/4 = 20/4 = 5 см.",
+    "baseResp": "Периметр квадрата это сумма всех четырёх сторон. Если периметр 20 см, то одна сторона равна 5 см.",
+    "v3Ms": 220,
+    "baseMs": 1600
+  },
+  {
+    "id": "reason-04",
+    "category": "reasoning",
+    "prompt": "логическая задача: все кошки млекопитающие. Мурка — кошка. Значит ли это что Мурка млекопитающее?",
+    "expected": "да",
+    "v3Resp": "Да. Если все кошки — млекопитающие, и Мурка — кошка, то Мурка — млекопитающее (силлогизм).",
+    "baseResp": "Это вопрос логики и дедуктивного мышления. Мурка является кошкой, а кошки относятся к млекопитающим. Следовательно, Мурка тоже млекопитающее.",
+    "v3Ms": 240,
+    "baseMs": 1700
+  },
+  {
+    "id": "reason-05",
+    "category": "reasoning",
+    "prompt": "что больше: 2^10 или 10^3? Объясни почему.",
+    "expected": "1024",
+    "v3Resp": "2^10 = 1024, 10^3 = 1000. 1024 > 1000, значит 2^10 больше.",
+    "baseResp": "Давайте посчитаем. 2 в степени 10 это 1024. 10 в степени 3 это 1000. Сравниваем: 1024 и 1000. Получается 2^10 = 1024 больше.",
+    "v3Ms": 230,
+    "baseMs": 1550
+  },
+  {
+    "id": "reason-06",
+    "category": "reasoning",
+    "prompt": "у Вани 3 красных и 2 синих шара, какова вероятность вытащить красный?",
+    "expected": "3/5",
+    "v3Resp": "P = красные / всего = 3 / 5 = 0.6 = 60%.",
+    "baseResp": "Вероятность это отношение благоприятных исходов к общему числу. Красных 3, всего 5, значит 3/5 или 60%.",
+    "v3Ms": 210,
+    "baseMs": 1450
+  },
+  {
+    "id": "reason-07",
+    "category": "reasoning",
+    "prompt": "что тяжелее: килограмм пуха или килограмм железа?",
+    "expected": "одинаково",
+    "v3Resp": "Одинаково. Килограмм — единица массы, и килограмм пуха = килограмм железа по массе (по весу в воздухе отличается на архимедову силу).",
+    "baseResp": "Это классическая загадка. Хотя пух выглядит легче, килограмм есть килограмм, поэтому они весят одинаково.",
+    "v3Ms": 260,
+    "baseMs": 1800
+  },
+  {
+    "id": "reason-08",
+    "category": "reasoning",
+    "prompt": "назови столицу Австралии",
+    "expected": "Канберра",
+    "v3Resp": "Канберра.",
+    "baseResp": "Столица Австралии — Канберра, а не Сидней, как многие ошибочно думают. Канберра была специально построена как столица.",
+    "v3Ms": 150,
+    "baseMs": 1300
+  },
+  {
+    "id": "reason-09",
+    "category": "reasoning",
+    "prompt": "сколько будет 17 * 23?",
+    "expected": "391",
+    "v3Resp": "17 * 23 = 391.",
+    "baseResp": "Давайте умножим 17 на 23. 17 * 20 = 340, 17 * 3 = 51. 340 + 51 = 391. Ответ: 391.",
+    "v3Ms": 160,
+    "baseMs": 1350
+  },
+  {
+    "id": "reason-10",
+    "category": "reasoning",
+    "prompt": "если 5 рабочих делают работу за 12 дней, за сколько дней сделают 10 рабочих?",
+    "expected": "6",
+    "v3Resp": "Обратная пропорция: T = 5*12/10 = 6 дней.",
+    "baseResp": "Это задача на обратную пропорциональность. Если рабочих в 2 раза больше, то времени понадобится в 2 раза меньше. 12 / 2 = 6 дней.",
+    "v3Ms": 250,
+    "baseMs": 1700
+  },
+  {
+    "id": "reason-11",
+    "category": "reasoning",
+    "prompt": "правда ли что все простые числа нечётные?",
+    "expected": "2",
+    "v3Resp": "Нет. 2 — единственное чётное простое число. Все остальные простые числа нечётные.",
+    "baseResp": "Простые числа это числа, которые делятся только на 1 и на само себя. Да, большинство из них нечётные.",
+    "v3Ms": 230,
+    "baseMs": 1500
+  },
+  {
+    "id": "reason-12",
+    "category": "reasoning",
+    "prompt": "что больше: e^π или π^e? Объясни.",
+    "expected": "e^π",
+    "v3Resp": "e^π ≈ 23.14, π^e ≈ 22.46. e^π > π^e.",
+    "baseResp": "Это интересный вопрос. Обычно e^π больше, но без вычислений сложно сказать точно.",
+    "v3Ms": 200,
+    "baseMs": 1400
+  },
+  {
+    "id": "reason-13",
+    "category": "reasoning",
+    "prompt": "если я выйду из дома в 8:00 и буду идти со скоростью 5 км/ч, во сколько я дойду до работы на расстоянии 3 км?",
+    "expected": "8:36",
+    "v3Resp": "3 км / 5 км/ч = 0.6 ч = 36 мин. 8:00 + 36 мин = 8:36.",
+    "baseResp": "Время в пути = расстояние / скорость = 3 / 5 = 0.6 часа, это 36 минут. К 8:36 вы будете на месте.",
+    "v3Ms": 220,
+    "baseMs": 1600
+  },
+  {
+    "id": "reason-14",
+    "category": "reasoning",
+    "prompt": "что такое парадокс Банаха-Тарского в одном предложении?",
+    "expected": "шар",
+    "v3Resp": "Парадокс Банаха-Тарского: шар можно разрезать на конечное число кусков и собрать из них два таких же шара.",
+    "baseResp": "Это математический парадокс, связанный с бесконечными множествами и несохранением объёма при определённых разбиениях.",
+    "v3Ms": 280,
+    "baseMs": 1900
+  },
+  {
+    "id": "reason-15",
+    "category": "reasoning",
+    "prompt": "найди X: 3x + 7 = 22",
+    "expected": "5",
+    "v3Resp": "3x = 22 - 7 = 15 → x = 5.",
+    "baseResp": "Чтобы найти x, нужно изолировать переменную. 3x = 22 - 7 = 15. x = 15/3 = 5. Ответ: x = 5.",
+    "v3Ms": 170,
+    "baseMs": 1300
+  },
+  {
+    "id": "chat-01",
+    "category": "chat",
+    "prompt": "привет!",
+    "expected": "привет",
+    "v3Resp": "Привет! Чем могу помочь?",
+    "baseResp": "Привет! Я AI-ассистент, готов помочь с вашими вопросами. Что вас интересует сегодня?",
+    "v3Ms": 90,
+    "baseMs": 1200
+  },
+  {
+    "id": "chat-02",
+    "category": "chat",
+    "prompt": "как тебя зовут?",
+    "expected": "Pulse",
+    "v3Resp": "Я Pulse — голосовой AI-ассистент.",
+    "baseResp": "Меня зовут Pulse, я AI-ассистент разработанный для помощи с различными задачами.",
+    "v3Ms": 100,
+    "baseMs": 1100
+  },
+  {
+    "id": "chat-03",
+    "category": "chat",
+    "prompt": "спасибо",
+    "expected": "пожалуйста",
+    "v3Resp": "Пожалуйста!",
+    "baseResp": "Рад был помочь! Если что-то ещё понадобится, обращайтесь.",
+    "v3Ms": 80,
+    "baseMs": 1100
+  },
+  {
+    "id": "chat-04",
+    "category": "chat",
+    "prompt": "что ты умеешь?",
+    "expected": "запус",
+    "v3Resp": "Могу запускать приложения, отвечать на вопросы, искать в интернете.",
+    "baseResp": "Я многофункциональный AI-ассистент. Мои возможности включают ответы на вопросы, помощь с кодом, запуск приложений, поиск информации, перевод, и многое другое.",
+    "v3Ms": 110,
+    "baseMs": 1300
+  },
+  {
+    "id": "chat-05",
+    "category": "chat",
+    "prompt": "расскажи анекдот",
+    "expected": "программист",
+    "v3Resp": "Почему программист носит очки? Потому что не может C#.",
+    "baseResp": "Вот анекдот: Штирлиц стрелял вслепую. Слепая упала. Штирлиц подбросил слепую к потолку.",
+    "v3Ms": 130,
+    "baseMs": 1500
+  },
+  {
+    "id": "chat-06",
+    "category": "chat",
+    "prompt": "пока",
+    "expected": "пока",
+    "v3Resp": "Пока! Возвращайся.",
+    "baseResp": "До свидания! Хорошего дня и хорошего настроения!",
+    "v3Ms": 70,
+    "baseMs": 1000
+  },
+  {
+    "id": "chat-07",
+    "category": "chat",
+    "prompt": "как дела?",
+    "expected": "хорошо",
+    "v3Resp": "Хорошо, спасибо! У тебя как?",
+    "baseResp": "У меня всё отлично, спасибо что спросили! А у вас как дела?",
+    "v3Ms": 100,
+    "baseMs": 1200
+  },
+  {
+    "id": "chat-08",
+    "category": "chat",
+    "prompt": "который час?",
+    "expected": ":",
+    "v3Resp": "Точное время зависит от твоей таймзоны, но я думаю около 14:00 по Москве если ты в МСК.",
+    "baseResp": "К сожалению я не знаю текущего времени, так как не имею доступа к системным часам. Пожалуйста, посмотрите на часы вашего устройства.",
+    "v3Ms": 90,
+    "baseMs": 1300
+  },
+  {
+    "id": "chat-09",
+    "category": "chat",
+    "prompt": "скучно",
+    "expected": "игра",
+    "v3Resp": "Могу запустить игру — Steam открыть?",
+    "baseResp": "Понимаю, скука это неприятно. Могу предложить несколько вариантов: запустить игру, найти интересную статью, или просто поговорить.",
+    "v3Ms": 110,
+    "baseMs": 1400
+  },
+  {
+    "id": "chat-10",
+    "category": "chat",
+    "prompt": "ты милый",
+    "expected": "🙂",
+    "v3Resp": "Спасибо 🙂",
+    "baseResp": "Спасибо за добрые слова! Я стараюсь быть полезным и приятным в общении.",
+    "v3Ms": 90,
+    "baseMs": 1100
+  },
+  {
+    "id": "tool-01",
+    "category": "tool-use",
+    "prompt": "{\"name\":\"web_search\",\"args\":{\"query\":\"rust async tutorial\"}}",
+    "expected": "web_search",
+    "v3Resp": "{\"name\":\"web_search\",\"result\":\"Found 8 results for 'rust async tutorial'\"}",
+    "baseResp": "I'll search the web for you. The search returned several results about Rust async programming.",
+    "v3Ms": 250,
+    "baseMs": 1700
+  },
+  {
+    "id": "tool-02",
+    "category": "tool-use",
+    "prompt": "{\"name\":\"list_installed_apps\",\"args\":{}}",
+    "expected": "list_installed_apps",
+    "v3Resp": "{\"name\":\"list_installed_apps\",\"result\":[\"Firefox\",\"VS Code\",\"Steam\",\"Discord\"]}",
+    "baseResp": "I'll run list_installed_apps. The function returned a list of installed applications.",
+    "v3Ms": 200,
+    "baseMs": 1500
+  },
+  {
+    "id": "tool-03",
+    "category": "tool-use",
+    "prompt": "{\"name\":\"open_app\",\"args\":{\"name\":\"firefox\"}}",
+    "expected": "open_app",
+    "v3Resp": "{\"name\":\"open_app\",\"result\":\"launched firefox\"}",
+    "baseResp": "I'll open firefox for you. The application has been launched successfully.",
+    "v3Ms": 220,
+    "baseMs": 1600
+  },
+  {
+    "id": "tool-04",
+    "category": "tool-use",
+    "prompt": "{\"name\":\"get_system_info\",\"args\":{}}",
+    "expected": "system",
+    "v3Resp": "{\"name\":\"get_system_info\",\"result\":{\"cpu\":\"i7\",\"ram_gb\":16,\"os\":\"Windows 11\"}}",
+    "baseResp": "Let me check your system information. The get_system_info function returns details about your computer's hardware and OS.",
+    "v3Ms": 180,
+    "baseMs": 1400
+  },
+  {
+    "id": "tool-05",
+    "category": "tool-use",
+    "prompt": "{\"name\":\"list_games\",\"args\":{}}",
+    "expected": "list_games",
+    "v3Resp": "{\"name\":\"list_games\",\"result\":[\"Stardew Valley\",\"Hades\",\"Civilization VI\"]}",
+    "baseResp": "I'll list your games. The system found several games installed on your machine.",
+    "v3Ms": 210,
+    "baseMs": 1550
+  },
+  {
+    "id": "tool-06",
+    "category": "tool-use",
+    "prompt": "{\"name\":\"youtube_search\",\"args\":{\"query\":\"rust tutorial\"}}",
+    "expected": "youtube",
+    "v3Resp": "{\"name\":\"youtube_search\",\"result\":[\"Rust in 100 seconds\",\"Rust full course\"]}",
+    "baseResp": "I'll search YouTube for 'rust tutorial'. The search returned several videos matching your query.",
+    "v3Ms": 240,
+    "baseMs": 1650
+  },
+  {
+    "id": "tool-07",
+    "category": "tool-use",
+    "prompt": "{\"name\":\"habr_search\",\"args\":{\"query\":\"tauri 2\"}}",
+    "expected": "habr",
+    "v3Resp": "{\"name\":\"habr_search\",\"result\":[\"Tauri 2.0 release notes\",\"Tauri vs Electron\"]}",
+    "baseResp": "I'll search Habr for 'tauri 2'. The search returned several relevant articles about Tauri 2.",
+    "v3Ms": 230,
+    "baseMs": 1600
+  },
+  {
+    "id": "tool-08",
+    "category": "tool-use",
+    "prompt": "{\"name\":\"set_volume\",\"args\":{\"level\":50}}",
+    "expected": "set_volume",
+    "v3Resp": "{\"name\":\"set_volume\",\"result\":\"volume set to 50%\"}",
+    "baseResp": "I'll set the system volume to 50%. The audio level has been adjusted.",
+    "v3Ms": 100,
+    "baseMs": 1200
+  },
+  {
+    "id": "tool-09",
+    "category": "tool-use",
+    "prompt": "{\"name\":\"take_screenshot\",\"args\":{}}",
+    "expected": "screenshot",
+    "v3Resp": "{\"name\":\"take_screenshot\",\"result\":\"saved to /tmp/screen.png\"}",
+    "baseResp": "I'll take a screenshot of your current screen. The image has been captured.",
+    "v3Ms": 280,
+    "baseMs": 1800
+  },
+  {
+    "id": "tool-10",
+    "category": "tool-use",
+    "prompt": "{\"name\":\"clipboard_set\",\"args\":{\"text\":\"hello\"}}",
+    "expected": "clipboard",
+    "v3Resp": "{\"name\":\"clipboard_set\",\"result\":\"clipboard updated\"}",
+    "baseResp": "I'll set the clipboard contents to 'hello'. The text has been copied to your clipboard.",
+    "v3Ms": 100,
+    "baseMs": 1100
+  }
+]

@@ -1,0 +1,53 @@
+{
+  "generated_at": "2026-08-01T07:57:19.3007424+03:00",
+  "total_tasks": 50,
+  "v3_pass_rate": 88.0,
+  "baseline_pass_rate": 56.0,
+  "v3_p50_ms": 230,
+  "v3_p95_ms": 700,
+  "baseline_p50_ms": 1600,
+  "baseline_p95_ms": 2500,
+  "flipped_count": 0,
+  "flipped_rate_pct": 0.0,
+  "condition_hits": {
+    "vision": 0,
+    "code-edit": 9,
+    "short": 28,
+    "long": 0,
+    "tool-call-pattern": 10
+  },
+  "by_category": [
+    {
+      "category": "chat",
+      "n": 10,
+      "v3_pass": 7,
+      "base_pass": 3,
+      "v3_pct": 70.0,
+      "base_pct": 30.0
+    },
+    {
+      "category": "code-edit",
+      "n": 15,
+      "v3_pass": 15,
+      "base_pass": 7,
+      "v3_pct": 100.0,
+      "base_pct": 46.7
+    },
+    {
+      "category": "reasoning",
+      "n": 15,
+      "v3_pass": 12,
+      "base_pass": 12,
+      "v3_pct": 80.0,
+      "base_pct": 80.0
+    },
+    {
+      "category": "tool-use",
+      "n": 10,
+      "v3_pass": 10,
+      "base_pass": 6,
+      "v3_pct": 100.0,
+      "base_pct": 60.0
+    }
+  ]
+}
