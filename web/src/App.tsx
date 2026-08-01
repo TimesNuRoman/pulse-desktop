@@ -48,7 +48,7 @@ export function App() {
   // Onboarding: показывается один раз на mobile при первом запуске.
   const [showOnboarding, setShowOnboarding] = useState(() => IS_MOBILE && !isOnboardingDone());
 
-  // ─── Theme (dark/light/system) ───────────────────────────────────────
+  // ─── Theme (dark/system) — Pulse is dark-only, R96b ───────────────
   useEffect(() => {
     const t = readTheme();
     const cleanup = applyTheme(t);

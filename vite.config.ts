@@ -1,6 +1,15 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+
+// Single source of truth для App version: package.json.
+// `define` инлайнит значение в bundle, доступ через import.meta.env.VITE_APP_VERSION.
+// Используется в SettingsView.tsx (About-секция) — больше не нужно вручную
+// править строку "v0.X.Y" на каждом релизе.
+const pkg = JSON.parse(
+  readFileSync(resolve(__dirname, 'package.json'), 'utf-8'),
+) as { version: string };
 
 // Tauri dev: фиксированный порт (Tauri знает, куда стучаться).
 // frontend root = web/, build.outDir = web/dist/ (то же, что читает Tauri).
@@ -19,6 +28,9 @@ export default defineConfig({
     watch: { ignored: ['**/src-tauri/**', '**/target/**'] },
   },
   envPrefix: ['VITE_', 'TAURI_ENV_*'],
+  define: {
+    'import.meta.env.VITE_APP_VERSION': JSON.stringify(pkg.version),
+  },
   build: {
     outDir: resolve(__dirname, 'web/dist'),
     emptyOutDir: true,

@@ -1,18 +1,22 @@
 // Pulse mobile-iteration 17 — theme picker.
 //
-// Темы: dark (по умолчанию), light, system.
-// Persist в localStorage `pulse.theme`.
-// Применяется через `data-theme` на <html> и через media-query `prefers-color-scheme: dark/light`
-// когда выбрано "system".
+// Pulse — dark-only by design (R95 Designer #2, R96b). Option set сокращён
+// с {dark, light, system} до {dark, system}. Light CSS в styles.css (1725+)
+// оставлен как dead code — он не активируется без data-theme="light", который
+// теперь никто не выставляет. Полная зачистка light-CSS = R97+ scope.
+//
+// Persist в localStorage `pulse.theme`. Миграция: при чтении legacy "light"
+// в LS — falls back to 'dark' (R96b).
 
-export type Theme = 'dark' | 'light' | 'system';
+export type Theme = 'dark' | 'system';
 
 const LS_KEY = 'pulse.theme';
 
 export function readTheme(): Theme {
   try {
     const v = localStorage.getItem(LS_KEY);
-    if (v === 'dark' || v === 'light' || v === 'system') return v;
+    // Legacy 'light' → 'dark' (Pulse is dark-only).
+    if (v === 'dark' || v === 'system') return v;
   } catch {
     /* ignore */
   }
@@ -27,23 +31,27 @@ export function writeTheme(t: Theme): void {
   }
 }
 
-/** Применить тему к <html>. Возвращает cleanup для useEffect. */
+/** Применить тему к <html>. Возвращает cleanup для useEffect.
+ *
+ *  Pulse is dark-only — system mode resolves to 'dark' на любой OS, и при
+ *  смене prefers-color-scheme data-theme остаётся 'dark'. Listener оставлен,
+ *  чтобы при будущем включении light theme (R97+) достаточно было расширить
+ *  enum + эту функцию, без переписывания App.tsx.
+ */
 export function applyTheme(t: Theme): () => void {
   if (typeof document === 'undefined') return () => {};
   const root = document.documentElement;
   const mql = window.matchMedia('(prefers-color-scheme: dark)');
 
   function sync() {
-    const effective = t === 'system' ? (mql.matches ? 'dark' : 'light') : t;
-    root.setAttribute('data-theme', effective);
+    root.setAttribute('data-theme', 'dark');
   }
   sync();
 
-  let cleanup = () => {};
   if (t === 'system') {
     const handler = () => sync();
     mql.addEventListener('change', handler);
-    cleanup = () => mql.removeEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
   }
-  return cleanup;
+  return () => {};
 }

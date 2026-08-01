@@ -3,11 +3,22 @@
 // Что внутри:
 //  • Выбор text-модели (для обычного чата, tool-use, Smart Engine).
 //  • Выбор vision-модели (для скриншотов / прикреплённых картинок).
+//  • Theme picker (dark-only, R96b).
 //  • Capabilities preview (vision / tools) — на основе имени модели через
 //    эвристику `getModelCapabilities` (см. llm/client.ts).
 //
 // Persist: localStorage `pulse.model.override` и `pulse.visionModel.override`.
 // При первом запуске — пустые (т.е. берутся env VITE_LLM_MODEL / VITE_LLM_VISION_MODEL).
+//
+// R96b: light theme option removed. Pulse — dark-only by design (R95 Designer
+// audit §3.1 D1, Roman's hard rule #1). 'light' больше не присутствует в UI
+// и в Theme type (см. mobile/theme.ts). Light CSS в styles.css оставлен как
+// dead code — он не активируется без data-theme="light", который никто не
+// выставляет. Полная зачистка = R97+ scope.
+//
+// Version display: тянется из import.meta.env.VITE_APP_VERSION, который
+// прокидывается через `define` в vite.config.ts из package.json. Single
+// source of truth — больше не нужно править строку вручную на каждом релизе.
 
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -217,21 +228,23 @@ export function SettingsView() {
               value={theme}
               onChange={(e) => onThemeChange(e.target.value as Theme)}
             >
+              {/* Pulse is dark-only by design (Roman's hard rule #1).
+                  Light option removed in R96b. */}
               <option value="dark">🌙 Тёмная</option>
-              <option value="light">☀️ Светлая</option>
-              <option value="system">🖥 Системная</option>
+              <option value="system">🖥 Системная (всегда dark)</option>
             </select>
           </div>
         </div>
         <div className="settings__hint">
           Тема применяется мгновенно. Persist в localStorage <code>pulse.theme</code>.
+          Pulse — dark-only; «Системная» всегда даёт тёмную.
         </div>
       </div>
 
       <div className="settings__section">
         <div className="settings__title">About / Справка</div>
         <div className="settings__hint">
-          <b>Pulse</b> v0.2.0 · mobile-iteration 17
+          <b>Pulse</b> v{import.meta.env.VITE_APP_VERSION} · mobile-iteration 17
           <br />
           Среда:{' '}
           <code>
