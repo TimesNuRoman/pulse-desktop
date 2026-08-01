@@ -262,6 +262,318 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Smart Engine v3 — Tauri-команды (R79 Phase 3)
+//
+// Persist: engine_settings.json в app_data_dir() (per-user, %APPDATA%/Pulse на
+// Windows). Дефолты из EngineSettings::default() = enabled=true, threshold=8.
+// Юзер может править через Settings UI на фронте.
+//
+// Файловая персистенция: read-or-default, write-or-fail. Никогда не падаем
+// на фронт — при битом файле возвращаем дефолты (Roman: "не ломай UX из-за
+// кривого JSON в user dir"). При ошибке записи возвращаем ошибку (Roman:
+// "если юзер явно что-то поменял и мы не сохранили — это баг").
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Путь к файлу настроек. Helper для get/set команд.
+fn engine_settings_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("app_data_dir: {e}"))?;
+    // app_data_dir() может не существовать на свежей системе — создаём лениво.
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create_dir_all({:?}): {e}", dir))?;
+    Ok(dir.join("engine_settings.json"))
+}
+
+/// Прочитать настройки Smart Engine v3. Возвращает дефолты, если файла нет
+/// или он битый — никогда не падаем.
+#[tauri::command]
+fn engine_get_settings(app: AppHandle) -> Result<engine::EngineSettings, String> {
+    let path = engine_settings_path(&app)?;
+    match std::fs::read(&path) {
+        Ok(bytes) => match serde_json::from_slice::<engine::EngineSettings>(&bytes) {
+            Ok(s) => Ok(s.clamped()),
+            Err(e) => {
+                // Битый файл — логируем в stderr, отдаём дефолты.
+                eprintln!(
+                    "engine_get_settings: failed to parse {:?}: {e}; using defaults",
+                    path
+                );
+                Ok(engine::EngineSettings::default().clamped())
+            }
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Ok(engine::EngineSettings::default().clamped())
+        }
+        Err(e) => Err(format!("read {:?}: {e}", path)),
+    }
+}
+
+/// Записать настройки Smart Engine v3. Валидируем threshold в [MIN, MAX].
+/// Возвращает финальные (clamped) настройки — фронт увидит, что применилось.
+#[tauri::command]
+fn engine_set_settings(
+    app: AppHandle,
+    enabled: bool,
+    threshold: i32,
+) -> Result<engine::EngineSettings, String> {
+    let s = engine::EngineSettings {
+        enabled,
+        threshold,
+        schema_version: 1,
+    }
+    .clamped();
+
+    let path = engine_settings_path(&app)?;
+    let json = serde_json::to_vec_pretty(&s).map_err(|e| format!("serialize: {e}"))?;
+    // Пишем атомарно: tmp + rename. Если Tauri упадёт посреди write — файл
+    // останется целым.
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, &json).map_err(|e| format!("write tmp: {e}"))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("rename: {e}"))?;
+    Ok(s)
+}
+
+/// Вызвать auto-prefer из фронта. Параметры:
+///   * user_text     — последний user-message (для code-markers/length)
+///   * fallback      — какая модель была бы выбрана без auto-prefer
+///   * has_image     — есть ли image_url в messages (override'ит на vision)
+///   * category      — категория задачи ("code-edit"|"reasoning"|"chat"|"tool-use"|"")
+///
+/// Возвращает EngineDecision со всеми fired-условиями и preferred_model.
+/// Юзер видит в UI: «Auto-routing выбрал: code-edit / qwen2.5-coder:7b» (если
+/// flipped=true) или «по умолчанию: gemma2:2b» (если flipped=false).
+#[tauri::command]
+fn engine_auto_prefer(
+    app: AppHandle,
+    user_text: String,
+    fallback: String,
+    has_image: bool,
+    category: Option<String>,
+) -> Result<engine::EngineDecision, String> {
+    // Читаем реальные настройки юзера (включая enabled и threshold). Если файл
+    // не существует или битый — дефолты (engine::EngineSettings::default()).
+    let s = match engine_settings_path(&app).and_then(|p| {
+        std::fs::read(&p).map_err(|e| format!("read {:?}: {e}", p)).and_then(|bytes| {
+            serde_json::from_slice::<engine::EngineSettings>(&bytes)
+                .map_err(|e| format!("parse: {e}"))
+        })
+    }) {
+        Ok(loaded) => loaded.clamped(),
+        Err(_) => engine::EngineSettings::default().clamped(),
+    };
+
+    let cat = category
+        .as_deref()
+        .and_then(|s| engine::TaskCategory::from_str_opt(s));
+    let features = engine::extract_features(&user_text, has_image, cat);
+    let input = engine::TaskInput {
+        user_text,
+        features,
+    };
+    Ok(engine::auto_prefer(&input, &fallback, &s))
+}
+
+/// R79 Phase 3: pure routing decision без побочных эффектов.
+///
+/// Отличия от `engine_auto_prefer`:
+///   * `pass_threshold` приходит параметром (не из настроек юзера) — для
+///     eval harness, чтобы можно было A/B-тестировать разные thresholds
+///     без перезаписи файла настроек.
+///   * Возвращает `EngineDecision` со ВСЕМИ сигналами, не делает fallback
+///     "if disabled". Это dry-run для тестов.
+///
+/// Использование:
+///   - Frontend: `invoke('engine_decide', { userText, fallback, category, passThreshold: 5 })`
+///   - Eval harness: `Invoke-PulseEngine -Mode decide -PassThreshold 5` —
+///
+/// Параметры:
+///   * user_text      — последний user-message
+///   * fallback       — какая модель была бы выбрана без auto-prefer ("gemma3:4b")
+///   * has_image      — есть ли image_url в messages
+///   * category       — категория задачи ("code-edit" | "reasoning" | "chat" | "tool-use" | "")
+///   * pass_threshold — порог flip'а (1-20). По умолчанию 5 (R79).
+#[tauri::command]
+fn engine_decide(
+    user_text: String,
+    fallback: String,
+    has_image: bool,
+    category: Option<String>,
+    pass_threshold: Option<i32>,
+) -> Result<engine::EngineDecision, String> {
+    let threshold = pass_threshold
+        .unwrap_or(engine::PASS_THRESHOLD)
+        .clamp(engine::MIN_THRESHOLD, engine::MAX_THRESHOLD);
+    let s = engine::EngineSettings {
+        enabled: true, // decide() всегда enabled — это dry-run
+        threshold,
+        schema_version: 1,
+    };
+
+    let cat = category
+        .as_deref()
+        .and_then(|c| engine::TaskCategory::from_str_opt(c));
+    let features = engine::extract_features(&user_text, has_image, cat);
+    let input = engine::TaskInput {
+        user_text,
+        features,
+    };
+    Ok(engine::auto_prefer(&input, &fallback, &s))
+}
+
+/// R79 Phase 3: end-to-end invoke — routing decision + Ollama call + AB log.
+///
+/// Полный flow:
+///   1. Routing decision (engine_decide) — выбираем модель
+///   2. Ollama HTTP call к выбранной модели (POST /api/generate)
+///   3. Логируем в AbLogWriter (для A/B анализа)
+///   4. Возвращаем { decision, response, latency_ms }
+///
+/// Параметры:
+///   * user_text      — последний user-message
+///   * fallback       — какая модель по умолчанию ("gemma3:4b")
+///   * has_image      — есть ли image_url (override'ит на vision)
+///   * category       — категория задачи
+///   * pass_threshold — порог flip'а (default 5)
+///   * ollama_url     — Ollama base URL (default http://127.0.0.1:11434)
+///   * task_id        — для логирования (если None — генерим uuid)
+///
+/// Возвращает InvokeResult с:
+///   * decision: EngineDecision (preferred_model, score, flipped, etc.)
+///   * response: текст ответа от Ollama
+///   * latency_ms: время routing + HTTP call
+///   * log_written: true если запись в ab.jsonl прошла
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InvokeResult {
+    pub decision: engine::EngineDecision,
+    pub response: String,
+    pub latency_ms: u64,
+    pub routing_ms: u64,
+    pub http_ms: u64,
+    pub log_written: bool,
+    pub log_path: Option<String>,
+}
+
+#[tauri::command]
+async fn engine_invoke(
+    app: AppHandle,
+    user_text: String,
+    fallback: String,
+    has_image: bool,
+    category: Option<String>,
+    pass_threshold: Option<i32>,
+    ollama_url: Option<String>,
+    task_id: Option<String>,
+) -> Result<InvokeResult, String> {
+    let start_total = std::time::Instant::now();
+
+    // 1. Routing decision (sync, < 1ms).
+    let decision = engine_decide(
+        user_text.clone(),
+        fallback.clone(),
+        has_image,
+        category.clone(),
+        pass_threshold,
+    )?;
+    let routing_ms = start_total.elapsed().as_millis() as u64;
+
+    // 2. Ollama call.
+    let ollama = ollama_url.unwrap_or_else(|| "http://127.0.0.1:11434".to_string());
+    let model = &decision.preferred_model;
+    let http_start = std::time::Instant::now();
+    let response = ollama_generate(&ollama, model, &user_text, has_image).await?;
+    let http_ms = http_start.elapsed().as_millis() as u64;
+    let latency_ms = start_total.elapsed().as_millis() as u64;
+
+    // 3. AB log (best-effort: ошибка логирования не ломает invoke).
+    let task_id = task_id.unwrap_or_else(|| {
+        format!(
+            "live-{}-{}",
+            std::process::id(),
+            chrono_unix()
+        )
+    });
+    let log_path = engine::ab_log_path();
+    let entry = engine::AbLogEntry {
+        ts: chrono_unix() as i64,
+        task_id: task_id.clone(),
+        category: category.clone().unwrap_or_else(|| "chat".to_string()),
+        path: "v3".to_string(),
+        model: model.to_string(),
+        latency_ms,
+        passed: !response.is_empty(),
+        score: decision.score,
+        fired: decision.fired.clone(),
+        chars: user_text.chars().count(),
+        response_excerpt: Some(response.chars().take(200).collect::<String>()),
+    };
+    let log_written = match engine::AbLogWriter::at(log_path.clone()).write(&entry) {
+        Ok(()) => true,
+        Err(e) => {
+            eprintln!("engine_invoke: failed to write ab log: {e}");
+            false
+        }
+    };
+    let _ = app; // AppHandle сейчас не используется (файл пишется в default path)
+
+    Ok(InvokeResult {
+        decision,
+        response,
+        latency_ms,
+        routing_ms,
+        http_ms,
+        log_written,
+        log_path: Some(log_path.to_string_lossy().to_string()),
+    })
+}
+
+/// Ollama HTTP client — POST /api/generate (non-streaming).
+/// Возвращает текст ответа (поле "response" в JSON).
+async fn ollama_generate(
+    base_url: &str,
+    model: &str,
+    prompt: &str,
+    _has_image: bool,
+) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .map_err(|e| format!("reqwest: {e}"))?;
+
+    // Vision support — если has_image, модель должна быть vision (напр. llava).
+    // Сейчас передаём только текст; image-payload — TODO v0.7.
+    let body = serde_json::json!({
+        "model": model,
+        "prompt": prompt,
+        "stream": false,
+    });
+
+    let url = format!("{}/api/generate", base_url.trim_end_matches('/'));
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("POST {url}: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("ollama {status}: {body}"));
+    }
+
+    let v: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("parse ollama response: {e}"))?;
+    let response = v
+        .get("response")
+        .and_then(|x| x.as_str())
+        .ok_or_else(|| "no 'response' field".to_string())?;
+    Ok(response.to_string())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Файловый движок (v4 MVP)
 //
 // Команды вызываются фронтом через `invoke('...')` и не требуют capabilities
@@ -816,6 +1128,12 @@ pub fn run() {
             agent::system_info,
             agent::open_url,
             youtube::youtube_latest,
+            // Pulse v6.0 — Smart Engine v3 (R79 Phase 3)
+            engine_get_settings,
+            engine_set_settings,
+            engine_auto_prefer,
+            engine_decide,
+            engine_invoke,
         ])
         .setup(|app| {
             // Поднимаем Ollama в фоне (sidecar) ДО остальной инициализации,
