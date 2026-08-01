@@ -459,9 +459,14 @@ pub async fn find_app(
             500
         } else if name_lower.contains(&q_lower) {
             200
-        } else if q.len() <= 12 {
+        } else if q_lower.len() >= 3 && q_lower.len() <= 24 {
+            // Fuzzy (Левенштейн) только для запросов 3..24 символов.
+            // Порог `d <= 2` — 2 опечатки терпимы. Было `q.len() <= 12`,
+            // что не ловило опечатки в длинных названиях типа
+            // "Visual Studio Code" (17 chars) при вводе "visula".
+            let max_d = if q_lower.len() <= 6 { 1 } else { 2 };
             let d = levenshtein(&q_lower, &name_lower);
-            if d <= 2 {
+            if d <= max_d {
                 100 - (d as i32) * 10
             } else {
                 0
