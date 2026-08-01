@@ -1,0 +1,58 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Pulse",
+  "version": "0.1.0",
+  "identifier": "app.pulse.local",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:4319",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Pulse",
+        "width": 380,
+        "height": 1080,
+        "minWidth": 320,
+        "minHeight": 400,
+        "maxWidth": 380,
+        "maxHeight": 9999,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": false,
+        "shadow": true,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "trayIcon": {
+      "id": "pulse-tray",
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": false,
+      "tooltip": "Pulse — voice-first AI side panel"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.ico"
+    ],
+    "category": "Productivity",
+    "shortDescription": "Pulse — voice-first AI side panel",
+    "longDescription": "Compact right-side panel: chat + Habr search. Minimizes to tray.",
+    "externalBin": [
+      "binaries/ollama"
+    ]
+  },
+  "plugins": {}
+}

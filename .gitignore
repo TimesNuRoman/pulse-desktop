@@ -1,0 +1,63 @@
+# Node
+node_modules/
+.npm/
+.yarn/
+
+# Build outputs
+src-tauri/target/
+src-tauri/binaries/
+web/dist/
+web/build/
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+.astro/
+
+# Tauri generated
+src-tauri/gen/
+src-tauri/icons/icon.png.bak
+
+# TypeScript
+*.tsbuildinfo
+
+# Logs (keep useful ones in /logs/)
+*.log
+!.gitkeep
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env (DO commit .env.example)
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# OS
+$RECYCLE.BIN/
+
+# Agent artifacts (logs that were created by the build process, not in /logs)
+.lmstudio-pull.err.log
+.lmstudio-pull.log
+agent-cargo-*.log
+build-*.log
+release-build-*.log
+build.log
+android-build.log
+android-build-mobile.log
+cap-sync.log
+cargo-build-*.log
+cargo-check-sidecar.log
+npm-build-sidecar.log
+build-fix.log
+build-installer.log
+vision-task.json
