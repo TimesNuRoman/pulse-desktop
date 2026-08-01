@@ -61,3 +61,13 @@ npm-build-sidecar.log
 build-fix.log
 build-installer.log
 vision-task.json
+
+# R86: archived buggy eval runs (preserved for traceability, not for active use)
+data/archive-r86-buggy-runs/
+data/archive-r86-buggy-first-run/
+
+# R86: test file from R83 pattern (should be empty)
+src-tauri/src/.r86-test
+
+# Build artifacts (already in target/, but in case)
+target/

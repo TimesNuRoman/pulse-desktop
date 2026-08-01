@@ -1,8 +1,21 @@
-# Smart Engine v3 — Real-User Eval Harness (R79)
+# Smart Engine v3 — Real-User Eval Harness (R79 + R86)
 
-**Cycle:** R79 (post-Phase 3, PassThreshold 12 → 8)
+**Cycles:** R79 (PowerShell mirror, threshold 12→8) → R82 (tree-sitter + Russian edit verbs) → R86 (Rust-side validation)
 **Date:** 2026-08-01
 **Goal:** Validate the R75 finding (+32pp pass rate, −1370ms p50) on **real** user prompts, not synthetic.
+
+## R86 IMPORTANT: Use the Rust binary, not this PS harness
+
+Этот PowerShell harness зеркалит R79-логику (regex-маркеры, **без tree-sitter, без Russian edit verbs**). После R82 он показывает заниженные R79-baseline числа и НЕ отражает реальное улучшение. Запусти:
+
+```bash
+cd src-tauri && cargo run --release --bin eval_r86 -- \
+    ../scripts/smart-engine-v3-real-eval/prompts.jsonl \
+    ../data \
+    v3-on
+```
+
+Этот binary дёргает **реальный** `engine::auto_prefer` с tree-sitter + Russian verb detection. R86 baseline: **25/25 code-edit routing** (R82 target был 22/25, R79 был 5/25). Полные числа — `H:\Вайбкодинг\research\R86-EVAL-HARNESS-RERUN-2026-08-01.md`.
 
 ## What is this
 

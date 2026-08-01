@@ -22,6 +22,11 @@
 #   pwsh -File scripts/smart-engine-v3-real-eval/run-eval.ps1 -Mode simulate -EngineMode v3-on
 #   pwsh -File scripts/smart-engine-v3-real-eval/run-eval.ps1 -Mode simulate -DryRun
 #
+# R86 note: этот PS harness зеркалит R79 regex-логику и НЕ видит R82
+# tree-sitter улучшение. Для реальных R82 чисел (5/25 → 25/25 code-edit
+# hit-rate) запусти Rust binary:
+#   cd src-tauri && cargo run --release --bin eval_r86 -- <prompts.jsonl> <out_dir> [baseline|v3-off|v3-on]
+#
 # Engine modes (через -EngineMode baseline|v3-off|v3-on, default = v3-on):
 #   baseline    — Smart Engine выключен, всё через default gemma3:4b
 #   v3-off      — Smart Engine включён, но PassThreshold=99 (ни один flip не сработает)
@@ -128,6 +133,10 @@ $byCategory | Format-Table | Out-String | Write-Host
 #
 # Score: каждое условие = +5, category bonus = +2.
 # PassThreshold: baseline=99, v3-off=99, v3-on=8 (R79 default).
+#
+# R86 IMPORTANT: это зеркало R79-логики. R82 (tree-sitter + Russian edit verbs)
+# НЕ отражён здесь — для реальных R82 чисел используй
+# `cargo run --release --bin eval_r86` (см. ниже и R86 report).
 
 $SHORT_CHARS = 60
 $LONG_CHARS = 600
@@ -280,12 +289,16 @@ function Invoke-PulseEngine {
         [string]$Category,
         [string]$EngineMode
     )
-    # TODO R79: реализовать после добавления IPC-команд
+    # R86: stub остаётся. Реальный harness на Rust-side — `cargo run --release --bin eval_r86`
+    # (см. src-tauri/src/bin/eval_r86.rs). Этот PS harness заморожен на R79-логике
+    # (regex-маркеры, без tree-sitter). Для R82 tree-sitter + Russian-verb
+    # detection запусти Rust binary, иначе увидишь R79-baseline числа
+    # (5/25 code-edit hit-rate) и будешь думать что R82 не работает.
     return [pscustomobject]@{
         available = $false
         response = $null
         latency_ms = 0
-        error = "IPC_NOT_AVAILABLE: engine_decide/engine_invoke не реализованы в R78. Запусти -Mode simulate для Tier A scoring."
+        error = "IPC_NOT_AVAILABLE: engine_decide/engine_invoke ещё не подключены к этому harness. Используй Rust binary: cargo run --release --bin eval_r86 -- <prompts.jsonl> <out_dir> [baseline|v3-off|v3-on]"
     }
 }
 
