@@ -1,0 +1,58 @@
+{
+  "generated_at": "2026-08-01T15:10:17.6756028+03:00",
+  "mode": "simulate",
+  "engine_mode": "v3-on",
+  "pass_threshold": 8,
+  "build_path": "",
+  "total_prompts": 100,
+  "tier_a_routing_pass": 76,
+  "tier_a_routing_fail": 24,
+  "tier_a_routing_pass_rate": 76.0,
+  "tier_b_response_pass": 0,
+  "tier_b_response_fail": 0,
+  "tier_b_response_pass_rate": 0,
+  "flipped_count": 0,
+  "flipped_rate_pct": 0.0,
+  "latency_p50_ms": 0,
+  "latency_p95_ms": 0,
+  "condition_hits": {
+    "vision": 0,
+    "code-edit": 5,
+    "short": 47,
+    "long": 0,
+    "tool-call-pattern": 0
+  },
+  "by_category": [
+    {
+      "category": "code-edit",
+      "n": 25,
+      "routing_pass": 3,
+      "response_pass": 0,
+      "flipped_count": 0
+    },
+    {
+      "category": "habr-search",
+      "n": 25,
+      "routing_pass": 25,
+      "response_pass": 0,
+      "flipped_count": 0
+    },
+    {
+      "category": "quick-answer",
+      "n": 25,
+      "routing_pass": 23,
+      "response_pass": 0,
+      "flipped_count": 0
+    },
+    {
+      "category": "tool-call-pattern",
+      "n": 25,
+      "routing_pass": 25,
+      "response_pass": 0,
+      "flipped_count": 0
+    }
+  ],
+  "ipc_calls_attempted": 0,
+  "ipc_calls_succeeded": 0,
+  "result_file": "C:\\Users\\1\\.minimax-agent\\projects\\pulse-desktop\\data\\eval-results-simulate-v3-on-20260801-151017.jsonl"
+}
