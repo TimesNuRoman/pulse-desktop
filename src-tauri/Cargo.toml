@@ -33,6 +33,15 @@ base64 = "0.22"
 # sysinfo с дефолтными фичами — небольшая крейт, проще не воевать с feature-гейтами.
 sysinfo = "0.32"
 winreg = "0.52"
+# R82: tree-sitter для code-aware Smart Engine v3 routing.
+# Решает R79 Eval Harness §5.3: marker-regex не отличает "show me Rust code" от
+# "explain how Vec::new() works". Tree-sitter парсит AST и подтверждает наличие
+# function/class/import. Детект становится structural, а не lexical.
+# Cargo registry уже содержит ~700MB кэша, докачается ~5-10MB.
+tree-sitter = "0.25"
+tree-sitter-rust = "0.23"
+tree-sitter-typescript = "0.23"
+tree-sitter-javascript = "0.23"
 
 [profile.release]
 panic = "abort"

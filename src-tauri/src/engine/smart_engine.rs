@@ -45,6 +45,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::parser;
+
 /// Категория задачи (для A/B-бенчмарка и для auto-prefer).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -114,6 +116,17 @@ pub struct EngineDecision {
     pub threshold: i32,
     /// true если score >= threshold и preferred != fallback
     pub flipped: bool,
+    /// R82: tree-sitter подтвердил что user_text содержит parseable code
+    /// (function/class/struct/import). Structural confirmation, не lexical.
+    /// Полезно для UI ("код найден") и для eval-harness'а (измерять parser vs
+    /// manual labels).
+    #[serde(default)]
+    pub code_parse_signal: bool,
+    /// R82: code-edit flip сработал, но parser не подтвердил (только Russian
+    /// verb intent типа "напиши функцию..."). Это маркер для UI: "low confidence,
+    /// можно перепроверить routing".
+    #[serde(default)]
+    pub low_confidence: bool,
 }
 
 /// Настройки Smart Engine v3 (R79). Persisted в app data dir.
@@ -321,6 +334,28 @@ pub fn detect_tool_call_pattern(text: &str) -> bool {
     TOOL_MARKERS.iter().any(|m| lower.contains(m))
 }
 
+/// R82: Russian edit-intent verbs. Это подмножество CODE_MARKERS без
+/// question-words (объясни / что делает / что выведет / имплементируй).
+///
+/// Используется в auto_prefer для low-confidence routing: если marker-signal
+/// сработал, но parser не подтвердил code, проверяем наличие edit-intent verb.
+/// Если есть — flip'аем с `low_confidence=true`. Если нет — rejected (R79 §5.3
+/// over-fire protection: "tokio::" в quick-answer остаётся quick-answer).
+const RUSSIAN_EDIT_VERBS: &[&str] = &[
+    "напиши", "сделай", "поправь", "исправь", "отрефактори", "рефакторни",
+    "отрефакторь", "упрости", "добавь", "удали", "замени", "переименуй",
+    "вынеси", "инлайни", "преврати", "конвертируй", "конвертни", "перепиши",
+    "создай",
+];
+
+/// Проверить, содержит ли текст хотя бы один Russian edit-verb.
+/// Substring match в lowercase. Используется в auto_prefer для low-confidence
+/// code-edit routing.
+fn has_russian_edit_verb(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    RUSSIAN_EDIT_VERBS.iter().any(|v| lower.contains(v))
+}
+
 /// Извлечь EngineFeatures из сырого user-prompt.
 ///
 /// Perf: считаем lowercase один раз и шарим между code-markers и
@@ -388,6 +423,8 @@ pub fn auto_prefer(input: &TaskInput, fallback_model: &str, settings: &EngineSet
             score: 0,
             threshold,
             flipped: false,
+            code_parse_signal: false,
+            low_confidence: false,
         };
     }
 
@@ -396,6 +433,14 @@ pub fn auto_prefer(input: &TaskInput, fallback_model: &str, settings: &EngineSet
     let mut fired: Vec<String> = Vec::with_capacity(5);
     let mut score: i32 = 0;
     let mut preferred = fallback_model.to_string();
+    let mut low_confidence: bool = false;
+
+    // R82: tree-sitter structural code-confirm. Вызываем ДО code-edit
+    // condition, чтобы потом решить flip или reject. Hot-path: p50 < 5ms
+    // на 1KB (см. parser::tests::perf_parse_latency_p50_under_5ms_on_1kb).
+    // Для коротких промптов (< 200 chars) — обычно < 0.5ms.
+    let is_actual_code = parser::CodeParser::is_code_construct(&input.user_text);
+    let has_edit_intent = has_russian_edit_verb(&input.user_text);
 
     // Condition 1: vision
     if input.features.has_image {
@@ -406,26 +451,60 @@ pub fn auto_prefer(input: &TaskInput, fallback_model: &str, settings: &EngineSet
 
     // Condition 2: code-edit
     //
-    // R79: fires ТОЛЬКО при code-fence (strong) или (markers + category=CodeEdit).
+    // R79 baseline: fires ТОЛЬКО при code-fence (strong) или (markers + category=CodeEdit).
     // Keyword-only marker (напр. "tokio::" в quick-answer) НЕ flip'ает модель —
     // только логируется как "code-edit-marker" для observability.
     //
-    // Это решает R79 Eval Harness §5.3 over-fire: 2/25 quick-answer промпта
-    // с "tokio::spawn" / "Vec::new()" не должны уходить в code-модель.
+    // R82 enhancement: structural confirmation через tree-sitter.
+    //   * code-fence present → flip'аем безусловно (fence = explicit user
+    //     signal "это код", parser может и не распарсить ```-обёртку).
+    //     Записываем "code-edit" (+ "code-parse-confirmed" если parser
+    //     тоже подтвердил).
+    //   * parser подтвердил (is_actual_code=true) → flip'аем с high
+    //     confidence. Это новый structural signal.
+    //   * markers + CodeEdit category + Russian edit-verb, parser
+    //     не подтвердил → flip'аем с low_confidence=true.
+    //   * markers + CodeEdit category без verb, parser не подтвердил →
+    //     rejected (R79 §5.3 over-fire protection).
     let code_edit_strong = input.features.has_code_fence;
     let code_edit_with_category = input.features.has_code_markers
         && matches!(input.features.category, Some(TaskCategory::CodeEdit));
 
-    if code_edit_strong || code_edit_with_category {
+    // Decision tree (R82):
+    //   should_flip  | low_conf | условие
+    //   -------------+----------+-------------------------------------
+    //   true         | false    | is_actual_code (parser confirmed)
+    //   true         | false    | code-fence (explicit user signal)
+    //   true         | true     | marker + CodeEdit + edit-verb (intent only)
+    //   false        | false    | marker + cat без verb/parser (rejected)
+    //   false        | false    | только markers без cat (weak signal)
+    let (should_flip, reason) = if is_actual_code {
+        (true, "code-parse-confirmed")
+    } else if code_edit_strong {
+        (true, "code-edit") // fence is strong — trust
+    } else if code_edit_with_category && has_edit_intent {
+        low_confidence = true;
+        (true, "code-parse-pending")
+    } else {
+        (false, "code-edit-rejected")
+    };
+
+    if should_flip {
         fired.push("code-edit".to_string());
+        fired.push(reason.to_string());
         score += CONDITION_WEIGHT;
         // vision выше по приоритету — перезаписываем только если vision не сработал
         if preferred == fallback_model {
             preferred = "code".to_string();
         }
+    } else if code_edit_with_category {
+        // Marker + cat сработал, но ни parser ни verb не подтвердили.
+        // R79 §5.3 over-fire protection: "tokio::" в quick-answer не должен
+        // flip'ать на code, даже если category=CodeEdit (напр. auto-detected).
+        fired.push("code-edit-rejected".to_string());
     } else if input.features.has_code_markers {
-        // Weak marker hit без code-fence и без CodeEdit-категории —
-        // логируем для observability, но не flip'аем.
+        // Weak marker hit без code-fence, без CodeEdit-категории, и без
+        // parser-подтверждения — логируем для observability, но не flip'аем.
         fired.push("code-edit-marker".to_string());
     }
 
@@ -472,6 +551,8 @@ pub fn auto_prefer(input: &TaskInput, fallback_model: &str, settings: &EngineSet
         score,
         threshold,
         flipped,
+        code_parse_signal: is_actual_code,
+        low_confidence,
     }
 }
 
@@ -817,5 +898,108 @@ mod tests {
         assert_eq!(TaskCategory::from_str_opt("reasoning"), Some(TaskCategory::Reasoning));
         assert_eq!(TaskCategory::from_str_opt("bogus"), None);
         assert_eq!(TaskCategory::from_str_opt(""), None);
+    }
+
+    // ── R82 NEW: tree-sitter structural code-confirm integration test ───────
+
+    /// R79 Eval Harness §5.3 false-negative #1:
+    /// "Что делает `async fn main() { tokio::spawn(...) }`?" — R79 marker-regex
+    /// не подтверждал code construct (нет ``` fence, нет category, есть только
+    /// keyword markers в inline backticks). С tree-sitter: парсер извлекает
+    /// inline backtick, видит `fn main() { ... }` как function_item, и
+    /// confirm'ит code_parse_signal.
+    ///
+    /// Ожидаемое: code_parse_signal=true, flipped=true, preferred="code".
+    #[test]
+    fn r82_inline_backtick_code_construct_flips_with_parse_signal() {
+        let prompt = "Что делает `async fn main() { tokio::spawn(...) }`?";
+        let d = auto_prefer(
+            &make_input(prompt, false, Some(TaskCategory::CodeEdit)),
+            "default",
+            &default_settings(),
+        );
+        assert!(
+            d.code_parse_signal,
+            "R82: tree-sitter should confirm code construct from inline backtick: {:?}",
+            d
+        );
+        assert!(
+            d.flipped,
+            "R82: code-confirmed prompt should flip to code model: {:?}",
+            d
+        );
+        assert_eq!(d.preferred_model, "code");
+        assert!(d.fired.iter().any(|f| f == "code-parse-confirmed"));
+    }
+
+    /// R79 Eval Harness §5.3 false-negative #2:
+    /// "Объясни как работает Vec::new()" — R79 marker-regex flip'ал (имеет
+    /// "::new(" маркер), но это вопрос, не code request. С tree-sitter: parser
+    /// НЕ находит function_item (Vec::new() — expression, не function), и
+    /// code_parse_signal=false.
+    ///
+    /// Ожидаемое: code_parse_signal=false, НЕ flip'ает на code (flip'ает на
+    /// fast из-за short+cat, что OK).
+    #[test]
+    fn r82_prose_with_code_keyword_no_parse_signal() {
+        let prompt = "Объясни как работает Vec::new() в Rust";
+        let d = auto_prefer(
+            &make_input(prompt, false, Some(TaskCategory::Chat)),
+            "default",
+            &default_settings(),
+        );
+        assert!(
+            !d.code_parse_signal,
+            "R82: prose with code keyword but no block should NOT have parse signal: {:?}",
+            d
+        );
+        assert_ne!(
+            d.preferred_model, "code",
+            "R82: prose should NOT route to code model: {:?}",
+            d
+        );
+    }
+
+    /// R82: marker + Russian edit verb, no parseable code → low_confidence.
+    /// Это R79 over-fire fix подтверждение: "напиши функцию add" (R79 §5.2
+    /// marker hit) flip'ает, но помечается low_confidence=true (parser не
+    /// видел полный function body).
+    #[test]
+    fn r82_russian_verb_no_parser_confirm_is_low_confidence() {
+        let prompt = "напиши функцию add";
+        let d = auto_prefer(
+            &make_input(prompt, false, Some(TaskCategory::CodeEdit)),
+            "default",
+            &default_settings(),
+        );
+        assert!(d.flipped, "should flip on marker+cat: {:?}", d);
+        assert_eq!(d.preferred_model, "code");
+        assert!(
+            d.low_confidence,
+            "R82: no parser confirm + Russian edit verb = low_confidence: {:?}",
+            d
+        );
+        assert!(d.fired.iter().any(|f| f == "code-parse-pending"));
+    }
+
+    /// R82: full Rust code block + CodeEdit category → high confidence.
+    /// Парсер видит `fn main()`, `use std::`, struct → confirm.
+    #[test]
+    fn r82_full_rust_code_block_high_confidence() {
+        let prompt = "поправь:\n```rust\nuse std::collections::HashMap;\nfn main() { let _ = HashMap::new(); }\n```";
+        let d = auto_prefer(
+            &make_input(prompt, false, Some(TaskCategory::CodeEdit)),
+            "default",
+            &default_settings(),
+        );
+        assert!(d.flipped);
+        assert_eq!(d.preferred_model, "code");
+        assert!(
+            d.code_parse_signal,
+            "R82: full Rust code block should have parse signal: {:?}",
+            d
+        );
+        assert!(!d.low_confidence, "parser-confirmed code = high confidence");
+        assert!(d.fired.iter().any(|f| f == "code-parse-confirmed"));
     }
 }

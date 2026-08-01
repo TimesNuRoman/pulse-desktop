@@ -573,6 +573,50 @@ async fn ollama_generate(
     Ok(response.to_string())
 }
 
+/// R82: tree-sitter based code parser. Парсит source как Rust/TS/JS и
+/// возвращает structural metadata (function count, class count, imports,
+/// line/char count, AST complexity, parse_error flag).
+///
+/// Используется:
+///   * Smart Engine v3 routing (auto_prefer внутренне дёргает
+///     `CodeParser::is_code_construct` для structural code-confirm).
+///   * Frontend: `invoke('parse_code', { source, language: null })` для
+///     UI "что в коде" панелей, syntax highlighting, etc.
+///   * Eval harness: `Invoke-PulseEngine -Mode parse -Source $code` для
+///     A/B измерений parser vs manual labels.
+///
+/// Параметры:
+///   * source   — текст кода (любой длины; обычно 100B-50KB)
+///   * language — "rust" | "typescript" | "javascript" | null (auto-detect).
+///     null/None = используем `CodeParser::detect_language`.
+///
+/// Возвращает `engine::ParseResult` (serializable в JSON для фронта).
+#[tauri::command]
+fn parse_code(
+    source: String,
+    language: Option<String>,
+) -> Result<engine::ParseResult, String> {
+    // Resolve language: explicit param wins, else auto-detect
+    let lang_opt = language
+        .as_deref()
+        .and_then(|s| engine::CodeLanguage::from_str_opt(s));
+    let resolved = lang_opt.unwrap_or_else(|| engine::CodeParser::detect_language(&source));
+    match resolved {
+        engine::CodeLanguage::Rust => engine::CodeParser::parse_rust(&source),
+        engine::CodeLanguage::TypeScript | engine::CodeLanguage::JavaScript => {
+            engine::CodeParser::parse_typescript(&source)
+        }
+        engine::CodeLanguage::Unknown => {
+            // Try Rust first, then TS as a courtesy
+            if let Ok(r) = engine::CodeParser::parse_rust(&source) {
+                Ok(r)
+            } else {
+                engine::CodeParser::parse_typescript(&source)
+            }
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Файловый движок (v4 MVP)
 //
@@ -1134,6 +1178,8 @@ pub fn run() {
             engine_auto_prefer,
             engine_decide,
             engine_invoke,
+            // R82: tree-sitter based code parser (structural code-confirm + UI)
+            parse_code,
         ])
         .setup(|app| {
             // Поднимаем Ollama в фоне (sidecar) ДО остальной инициализации,
