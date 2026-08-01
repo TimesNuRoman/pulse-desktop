@@ -1,15 +1,22 @@
 // Pulse — web search (general-purpose).
 //
 // Frontend вызывает `invoke('web_search', { query, limit })` после эвристики
-// `shouldWebSearch` (см. web/src/llm/tools.ts). Внутри — три fallback'а:
+// `shouldWebSearch` (см. web/src/llm/tools.ts). Внутри — fallback'ы:
 //
 //   1) DuckDuckGo HTML   (https://html.duckduckgo.com/html/?q=...)
 //   2) DuckDuckGo Lite   (https://lite.duckduckgo.com/lite/?q=...)
 //   3) Wikipedia REST    (для "что такое X", "кто такой Y")
+//   4) DDG Instant API   (https://api.duckduckgo.com/?q=...&format=json,
+//                         официальный JSON endpoint без anti-bot)
 //
 // На каждом шаге: парсим, если получили ≥1 item — возвращаем сразу. Иначе
-// идём к следующему. Если все три провалились — graceful degradation:
+// идём к следующему. Если все провалились — graceful degradation:
 // items=[], offline=true, error=Some(...).
+//
+// Повторные запросы с тем же query+limit в течение 60 сек обслуживаются
+// из in-process LRU-кэша (см. `cache_get/cache_put` ниже) — ChatView
+// может вызывать webSearch на каждое сообщение, не нужно каждый раз
+// молотить DDG/Wikipedia. Кэшируем только успешные ответы с items.
 //
 // DDG отдаёт ссылки как редиректы `//duckduckgo.com/l/?uddg=ENCODED&...` —
 // раскручиваем через `unwrap_ddg_url` (через `urlencoding`, без новых крейтов).
@@ -42,6 +49,75 @@ const SNIPPET_MAX_CHARS: usize = 220;
 const WEB_SEARCH_UA: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
      (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+/// TTL in-process кэша web_search: 60 сек. ChatView может дёргать
+/// webSearch на каждое сообщение, при этом повторяющиеся ask'и (юзер
+/// нажал Enter дважды, или LLM гонит один и тот же вопрос в цикле)
+/// не должны молотить DDG/Wikipedia.
+const CACHE_TTL_SECS: u64 = 60;
+/// Cap записей. LRU-вытеснение при переполнении. 32 — практический
+/// потолок для одной сессии.
+const CACHE_MAX_ENTRIES: usize = 32;
+
+// ─── In-process LRU cache (no async, std-only) ─────────────────────────────
+//
+// Хранит WebSearchResult по ключу `query:limit` (lowercase, trim). На miss
+// вызывающий делает внешний запрос и кладёт в кэш через cache_put.
+// Ошибки (offline=true) НЕ кэшируем — пусть следующий запрос попробует
+// заново (upstream мог починиться).
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::Instant;
+
+type CacheEntry = (Instant, WebSearchResult);
+
+static CACHE: Mutex<Option<HashMap<String, CacheEntry>>> = Mutex::new(None);
+
+fn cache_ensure() -> std::sync::MutexGuard<'static, Option<HashMap<String, CacheEntry>>> {
+    let mut g = CACHE.lock().expect("web_search cache poisoned");
+    if g.is_none() {
+        *g = Some(HashMap::new());
+    }
+    g
+}
+
+fn cache_key(query: &str, limit: usize) -> String {
+    format!("{}:{}", query.trim().to_lowercase(), limit)
+}
+
+/// Возвращаем копию из кэша, если она свежая.
+fn cache_get(key: &str) -> Option<WebSearchResult> {
+    let g = cache_ensure();
+    let map = g.as_ref().expect("cache ensured");
+    if let Some((at, res)) = map.get(key) {
+        if at.elapsed().as_secs() < CACHE_TTL_SECS {
+            return Some(res.clone());
+        }
+    }
+    None
+}
+
+/// Кладём успешный (items > 0) результат в кэш. На overflow — LRU-вытеснение
+/// по самому старому `at`.
+fn cache_put(key: String, res: WebSearchResult) {
+    // Не кэшируем «пустые» ответы — пусть следующий запрос снова попробует upstream.
+    if res.items.is_empty() {
+        return;
+    }
+    let mut g = cache_ensure();
+    let map = g.as_mut().expect("cache ensured");
+    if map.len() >= CACHE_MAX_ENTRIES {
+        // Найти самый старый entry и удалить.
+        if let Some(oldest_key) = map
+            .iter()
+            .min_by_key(|(_, (at, _))| *at)
+            .map(|(k, _)| k.clone())
+        {
+            map.remove(&oldest_key);
+        }
+    }
+    map.insert(key, (Instant::now(), res));
+}
 
 /// Нормализуем URL для дедупа: scheme+host lower, остальное — как есть.
 /// `https://en.wikipedia.org/wiki/Rust_(programming_language)` и
@@ -475,23 +551,37 @@ pub async fn web_search(query: String, limit: Option<u32>) -> Result<WebSearchRe
     }
     let limit = limit.unwrap_or(8).min(20) as usize;
 
+    // In-process cache: повторный запрос того же query+limit в течение 60 сек
+    // обслуживаем без обращения к upstream. ChatView может звать webSearch на
+    // каждое сообщение — без кэша это легко 5+ req/sec на DDG при активной
+    // беседе, что быстро приводит к anti-bot.
+    let key = cache_key(&query, limit);
+    if let Some(cached) = cache_get(&key) {
+        return Ok(cached);
+    }
+
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| e.to_string())?;
 
+    // Один финальный return — чтобы не дублировать cache_put в каждой ветке.
+    let result: WebSearchResult;
+
     // 1) DDG HTML — основной backend
     match try_ddg_html(&query, &client).await {
         Ok(mut items) if !items.is_empty() => {
             items.truncate(limit);
-            return Ok(WebSearchResult {
-                query,
+            result = WebSearchResult {
+                query: query.clone(),
                 backend: "ddg-html".to_string(),
                 total: items.len() as u32,
                 items,
                 offline: false,
                 error: None,
-            });
+            };
+            cache_put(key, result.clone());
+            return Ok(result);
         }
         Ok(_) => {} // пусто — пробуем lite
         Err(e) => eprintln!("[pulse] web_search ddg-html failed: {e}"),
@@ -501,14 +591,16 @@ pub async fn web_search(query: String, limit: Option<u32>) -> Result<WebSearchRe
     match try_ddg_lite(&query, &client).await {
         Ok(mut items) if !items.is_empty() => {
             items.truncate(limit);
-            return Ok(WebSearchResult {
-                query,
+            result = WebSearchResult {
+                query: query.clone(),
                 backend: "ddg-lite".to_string(),
                 total: items.len() as u32,
                 items,
                 offline: false,
                 error: None,
-            });
+            };
+            cache_put(key, result.clone());
+            return Ok(result);
         }
         Ok(_) => {}
         Err(e) => eprintln!("[pulse] web_search ddg-lite failed: {e}"),
@@ -518,14 +610,16 @@ pub async fn web_search(query: String, limit: Option<u32>) -> Result<WebSearchRe
     match try_wikipedia(&query, &client).await {
         Ok(mut items) if !items.is_empty() => {
             items.truncate(limit);
-            return Ok(WebSearchResult {
-                query,
+            result = WebSearchResult {
+                query: query.clone(),
                 backend: "wikipedia".to_string(),
                 total: items.len() as u32,
                 items,
                 offline: false,
                 error: None,
-            });
+            };
+            cache_put(key, result.clone());
+            return Ok(result);
         }
         Ok(_) => {}
         Err(e) => eprintln!("[pulse] web_search wikipedia failed: {e}"),
@@ -538,14 +632,16 @@ pub async fn web_search(query: String, limit: Option<u32>) -> Result<WebSearchRe
     match try_ddg_instant(&query, &client).await {
         Ok(mut items) if !items.is_empty() => {
             items.truncate(limit);
-            return Ok(WebSearchResult {
-                query,
+            result = WebSearchResult {
+                query: query.clone(),
                 backend: "ddg-instant".to_string(),
                 total: items.len() as u32,
                 items,
                 offline: false,
                 error: None,
-            });
+            };
+            cache_put(key, result.clone());
+            return Ok(result);
         }
         Ok(_) => {}
         Err(e) => eprintln!("[pulse] web_search ddg-instant failed: {e}"),
@@ -776,5 +872,60 @@ mod tests {
         assert!(query_has_latin("SVE инструкции"));
         assert!(!query_has_latin("Привет мир"));
         assert!(!query_has_latin("12345"));
+    }
+
+    #[test]
+    fn cache_key_normalizes_query_and_limit() {
+        assert_eq!(cache_key("  Rust 1.83  ", 8), "rust 1.83:8");
+        assert_eq!(cache_key("Rust 1.83", 5), "rust 1.83:5");
+        assert_ne!(cache_key("Rust 1.83", 8), cache_key("Rust 1.83", 5));
+    }
+
+    #[test]
+    fn cache_put_then_get_roundtrip() {
+        // Очищаем кэш для теста (на случай, если другие тесты что-то положили)
+        {
+            let mut g = cache_ensure();
+            *g = Some(std::collections::HashMap::new());
+        }
+        let key = cache_key("test-roundtrip-query", 5);
+        let r = WebSearchResult {
+            query: "test-roundtrip-query".into(),
+            backend: "ddg-html".into(),
+            total: 1,
+            items: vec![SearchItem {
+                title: "t".into(),
+                url: "https://example.com/".into(),
+                snippet: "s".into(),
+                source: "general".into(),
+                site_name: "Web".into(),
+            }],
+            offline: false,
+            error: None,
+        };
+        cache_put(key.clone(), r.clone());
+        let got = cache_get(&key).expect("cache miss after put");
+        assert_eq!(got.backend, "ddg-html");
+        assert_eq!(got.items.len(), 1);
+        assert_eq!(got.items[0].url, "https://example.com/");
+    }
+
+    #[test]
+    fn cache_does_not_store_empty_results() {
+        {
+            let mut g = cache_ensure();
+            *g = Some(std::collections::HashMap::new());
+        }
+        let key = cache_key("offline-test", 5);
+        let r = WebSearchResult {
+            query: "offline-test".into(),
+            backend: "none".into(),
+            total: 0,
+            items: vec![],
+            offline: true,
+            error: Some("no upstream".into()),
+        };
+        cache_put(key.clone(), r);
+        assert!(cache_get(&key).is_none(), "offline results must not be cached");
     }
 }
