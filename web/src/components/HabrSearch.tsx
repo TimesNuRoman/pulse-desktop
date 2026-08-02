@@ -2,6 +2,9 @@ import { useState, useRef, useEffect, FormEvent } from 'react';
 import { searchHabr } from '../api';
 import type { HabrItem } from '../types';
 import { usePullToRefresh } from '../mobile/usePullToRefresh';
+import { ProRequiredError } from '../lib/license/types';
+import { licenseStore } from '../lib/license/store';
+import { UpgradeModal } from './PRO/UpgradeModal';
 
 export function HabrSearch() {
   const [query, setQuery] = useState('');
@@ -11,6 +14,8 @@ export function HabrSearch() {
   const [error, setError] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
   const [total, setTotal] = useState(0);
+  // R119: gate modal — shown when a free user tries to run a search.
+  const [gateOpen, setGateOpen] = useState(false);
   // Ref-лок против race condition: если юзер успеет дважды кликнуть «Найти»,
   // второй клик увидит актуальный флаг (а не stale closure из render).
   const inflight = useRef(false);
@@ -30,6 +35,17 @@ export function HabrSearch() {
 
   async function runSearch(q: string) {
     if (!q || inflight.current) return;
+    // R119: PRO gate — web search is a paid feature. Throws ProRequiredError,
+    // which we catch and surface via the upgrade modal.
+    try {
+      licenseStore.requirePro('web-search');
+    } catch (e) {
+      if (e instanceof ProRequiredError) {
+        setGateOpen(true);
+        return;
+      }
+      throw e;
+    }
     inflight.current = true;
     setLoading(true);
     setError(null);
@@ -124,6 +140,14 @@ export function HabrSearch() {
           </li>
         ))}
       </ul>
+
+      {gateOpen && (
+        <UpgradeModal
+          feature="web-search"
+          reason="click"
+          onClose={() => setGateOpen(false)}
+        />
+      )}
     </div>
   );
 }

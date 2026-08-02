@@ -15,6 +15,7 @@ import {
 } from './api';
 import { Onboarding, isOnboardingDone } from './mobile/Onboarding';
 import { applyTheme, readTheme } from './mobile/theme';
+import { licenseStore } from './lib/license/store';
 
 type View = 'chat' | 'agent' | 'files' | 'habr' | 'web' | 'settings';
 type OllamaStatus =
@@ -64,6 +65,15 @@ export function App() {
       cleanup();
       window.removeEventListener('storage', onStorage);
     };
+  }, []);
+
+  // ─── R119: cold-start license load ─────────────────────────────────
+  // Hydrate the license store from disk. If the file is missing, free tier.
+  // If it's tampered (GCM tag mismatch), the store clears it and falls
+  // back to free. Either way, the app boots — license issues never block
+  // the UI.
+  useEffect(() => {
+    void licenseStore.load();
   }, []);
 
   // ─── Capacitor init (back button + keyboard) ─────────────────────────
