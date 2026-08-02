@@ -2168,3 +2168,326 @@ a:hover { text-decoration: underline; }
   color: #0b0b10;
   font-weight: 600;
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+ * PRO license components (R119)
+ * Dark-only, Tokyo Night palette, 44dp touch targets, no marketing copy.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+.pro-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+}
+.pro-badge--active {
+  color: #0b0b10;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Upgrade modal */
+.upgrade-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.upgrade-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+}
+.upgrade-modal__panel {
+  position: relative;
+  width: min(360px, calc(100vw - 24px));
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.upgrade-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.upgrade-modal__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.upgrade-modal__close {
+  background: transparent;
+  border: 0;
+  color: var(--fg-dim);
+  font-size: 18px;
+  cursor: pointer;
+  min-width: 32px;
+  min-height: 32px;
+  line-height: 1;
+}
+.upgrade-modal__close:hover {
+  color: var(--fg);
+}
+.upgrade-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--fg);
+}
+.upgrade-modal__hint {
+  margin: 0;
+  color: var(--fg);
+}
+.upgrade-modal__fallback {
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: 11px;
+}
+.upgrade-modal__fallback-label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 10px;
+}
+.upgrade-modal__note {
+  margin: 0;
+  color: var(--fg-dim);
+  font-size: 11px;
+}
+.upgrade-modal__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.upgrade-modal__btn {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.upgrade-modal__btn--primary {
+  background: var(--accent);
+  color: #0b0b10;
+  border-color: var(--accent);
+}
+.upgrade-modal__btn--ghost {
+  background: transparent;
+}
+.upgrade-modal__activated-link {
+  background: transparent;
+  border: 0;
+  color: var(--fg-dim);
+  text-decoration: underline;
+  cursor: pointer;
+  align-self: center;
+  font-size: 11px;
+  min-height: 32px;
+}
+
+/* License input */
+.license-input {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.license-input__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+.license-input__prefix {
+  font-family: 'Cascadia Code', Menlo, monospace;
+  font-size: 12px;
+  color: var(--fg-dim);
+  letter-spacing: 0.05em;
+}
+.license-input__chunk {
+  width: 44px;
+  height: 32px;
+  text-align: center;
+  text-transform: uppercase;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: 'Cascadia Code', Menlo, monospace;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  padding: 0;
+}
+.license-input__chunk:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.license-input__paste {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.license-input__error {
+  font-size: 11px;
+  color: #f7768e;
+}
+.license-input__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.license-input__submit {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #0b0b10;
+}
+.license-input__submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* PRO settings section */
+.pro-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+}
+.pro-settings__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pro-settings__title {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg);
+}
+.pro-settings__pill {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--bg-2);
+  color: var(--fg-dim);
+  border: 1px solid var(--border);
+}
+.pro-settings__hint {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--fg-dim);
+  line-height: 1.45;
+}
+.pro-settings__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  min-height: 44px;
+  flex-wrap: wrap;
+}
+.pro-settings__label {
+  flex: 0 0 80px;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+}
+.pro-settings__value {
+  color: var(--fg);
+  font-family: 'Cascadia Code', Menlo, monospace;
+  font-size: 12px;
+}
+.pro-settings__key {
+  word-break: break-all;
+}
+.pro-settings__error {
+  font-size: 11px;
+  color: #f7768e;
+}
+.pro-settings__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.pro-settings__btn {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--fg);
+}
+.pro-settings__btn--primary {
+  background: var(--accent);
+  color: #0b0b10;
+  border-color: var(--accent);
+}
+.pro-settings__btn--ghost {
+  background: transparent;
+}
+
+/* Hot-swap chips (R119 multi-model gate) */
+.settings__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.settings__chip {
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Cascadia Code', Menlo, monospace;
+  font-size: 11px;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+.settings__chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.settings__chip--active {
+  background: var(--accent);
+  color: #0b0b10;
+  border-color: var(--accent);
+}

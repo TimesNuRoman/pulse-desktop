@@ -34,6 +34,7 @@
 mod agent;
 pub mod engine;
 pub mod web_search;
+mod license;
 mod youtube;
 
 use serde::{Deserialize, Serialize};
@@ -1192,6 +1193,11 @@ pub fn run() {
             engine_invoke,
             // R82: tree-sitter based code parser (structural code-confirm + UI)
             parse_code,
+            // R119: PRO license foundation (read/write/clear + format-check ping)
+            license::license_read,
+            license::license_write,
+            license::license_clear,
+            license::license_ping,
         ])
         .setup(|app| {
             // Поднимаем Ollama в фоне (sidecar) ДО остальной инициализации,

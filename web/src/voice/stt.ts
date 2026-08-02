@@ -78,3 +78,37 @@ export function createStubSTTEngine(): STTEngine {
 }
 
 export const STT_NOT_READY_MSG = 'STT не подключён. См. web/src/voice/stt.ts';
+
+/**
+ * Whisper STT engine — PRO feature (R119).
+ *
+ * Returns an STTEngine that, on start(), checks the license store and
+ * throws ProRequiredError if the user is not PRO. The actual Whisper.cpp
+ * binding is a R82 follow-up; R119 ships the gate + the contract.
+ */
+import { licenseStore } from '../lib/license/store';
+import type { ProFeature } from '../lib/license/types';
+
+export function createWhisperSTTEngine(): STTEngine {
+  const listeners = new Set<STTListener>();
+  return {
+    async start() {
+      licenseStore.requirePro('voice-input');
+      // R119: gate-only stub. The real Whisper integration (model load +
+      // wasm binding + streaming recognition) is a R82 follow-up.
+      throw new Error('whisper stt not implemented yet — see web/src/voice/stt.ts');
+    },
+    async stop() {
+      // noop
+    },
+    onResult(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    getModelId() {
+      return 'whisper-stub';
+    },
+  };
+}
+
+export const VOICE_INPUT_FEATURE: ProFeature = 'voice-input';

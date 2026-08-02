@@ -31,6 +31,11 @@ import type { ModelCapabilities } from '../llm/types';
 import { readTheme, writeTheme, applyTheme, type Theme } from '../mobile/theme';
 import { IS_MOBILE, IS_DESKTOP } from '../api';
 import { resetOnboarding } from '../mobile/Onboarding';
+import { ProRequiredError } from '../lib/license/types';
+import { licenseStore } from '../lib/license/store';
+import { PRO_FEATURES } from '../lib/pro-features';
+import { UpgradeModal } from './PRO/UpgradeModal';
+import { PROSettings } from './settings/PROSettings';
 
 const LS_MODEL = 'pulse.model.override';
 const LS_VISION = 'pulse.visionModel.override';
@@ -110,6 +115,9 @@ export function SettingsView() {
   const [theme, setTheme] = useState<Theme>(() => readTheme());
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // R119: PRO gate modal — surfaced when a free user tries to hot-swap to
+  // a non-default model.
+  const [multiModelGate, setMultiModelGate] = useState<string | null>(null);
 
   // Если список пресетов не содержит текущую модель — добавляем её как custom
   const textOptions = useMemo(() => {
@@ -137,6 +145,25 @@ export function SettingsView() {
       applyTheme(theme);
       setSaved(true);
     } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+
+  // R119: hot-swap to a different model is a PRO feature. The dropdowns above
+  // stay free (one text + one vision at a time). The "Hot-swap" chips below
+  // give a quick action that lets the user pick any preset and persist it;
+  // free users see the modal instead.
+  function tryHotSwap(model: string) {
+    try {
+      licenseStore.requirePro('multi-model');
+      writeLS(LS_MODEL, model);
+      setTextModel(model);
+      setSaved(true);
+    } catch (e) {
+      if (e instanceof ProRequiredError) {
+        setMultiModelGate(model);
+        return;
+      }
       setErr((e as Error).message);
     }
   }
@@ -297,6 +324,34 @@ export function SettingsView() {
         </div>
       </div>
 
+      {/* R119: hot-swap presets. Gated by `requirePro('multi-model')` in
+          `tryHotSwap`. Free users see the chips but the click triggers the
+          upgrade modal — they can still use the dropdowns above. */}
+      <div className="settings__section">
+        <div className="settings__title">Hot-swap presets (PRO)</div>
+        <div className="settings__hint">
+          {PRO_FEATURES['multi-model'].hint}
+        </div>
+        <div className="settings__chips">
+          {PRESETS.map((p) => (
+            <button
+              key={p.name}
+              type="button"
+              className={`settings__chip${textModel === p.name ? ' settings__chip--active' : ''}`}
+              onClick={() => tryHotSwap(p.name)}
+              title={p.hint}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* R119: PRO license section — paste-key input / status / sign out. */}
+      <div className="settings__section">
+        <PROSettings />
+      </div>
+
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <button className="settings__save" onClick={onSave} type="button">
           Сохранить
@@ -312,6 +367,14 @@ export function SettingsView() {
         {saved && <span className="settings__ok">✓ сохранено</span>}
         {err && <span className="settings__err">{err}</span>}
       </div>
+
+      {multiModelGate && (
+        <UpgradeModal
+          feature="multi-model"
+          reason="click"
+          onClose={() => setMultiModelGate(null)}
+        />
+      )}
     </div>
   );
 }
