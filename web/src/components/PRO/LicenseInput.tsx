@@ -3,6 +3,12 @@
 //
 // 5-group paste UI. Auto-uppercase, validates on blur, blocks submit on
 // invalid format. Calls back with the normalized key on submit.
+//
+// R125 fix: production users now start with empty inputs (no test-key
+// prefill). A dev-only "Use test key" shortcut is exposed when
+// `import.meta.env.DEV` is true so QA can still activate PRO with one
+// click. The HTML5 `pattern` attribute now matches the full 4-char
+// chunk (R119 base32 alphabet: A-H, J-K, M-N, P-Z, 2-9).
 
 import { useState, useEffect, FormEvent, KeyboardEvent, ClipboardEvent } from 'react';
 import { validateKey, normalizeKey, groupKey, TEST_KEY } from '../../lib/license/validate';
@@ -18,7 +24,10 @@ interface LicenseInputProps {
   initialValue?: string;
 }
 
-const INPUT_PATTERN = '[A-Z2-9]';
+// R119 base32 alphabet (matches Rust `is_allowed_base32_char`): A-H, J-K,
+// M-N, P-Z, 2-9. Excludes 0/O/1/I/L lookalikes. Pattern is anchored to a
+// full 4-char chunk (the input's `maxLength`) — R125 fix.
+const INPUT_PATTERN = '[A-HJ-KM-NP-Z2-9]{4}';
 
 function ChunkInput({
   value,
@@ -63,9 +72,13 @@ export function LicenseInput({
   externalError,
   initialValue,
 }: LicenseInputProps) {
+  // R125 fix: start empty by default. Production users see blank inputs
+  // and type/paste their real key. The dev-only "Use test key" button
+  // below populates `TEST_KEY` for QA. `initialValue` is still honored
+  // for callers that want to seed the input programmatically.
   const [chunks, setChunks] = useState<string[]>(() => {
-    const init = initialValue ? normalizeKey(initialValue) : TEST_KEY;
-    const g = groupKey(init);
+    if (!initialValue) return ['', '', '', '', ''];
+    const g = groupKey(normalizeKey(initialValue));
     return g.length === 6 ? g.slice(1) : ['', '', '', '', ''];
   });
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +105,26 @@ export function LicenseInput({
     setSubmitting(true);
     try {
       await onSubmit(joined);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // R125 fix: dev-only one-click activation with the hardcoded test key.
+  // Production users never see this. Bypasses HTML5 form validation by
+  // calling `onSubmit` directly (the form's `pattern`/`maxLength` checks
+  // would otherwise block the test key — its `TEST1` groups contain a
+  // `1`, which is intentionally outside the production base32 alphabet).
+  async function handleUseTestKey() {
+    if (disabled || submitting) return;
+    const groups = groupKey(TEST_KEY);
+    if (groups.length === 6) setChunks(groups.slice(1));
+    setError(null);
+    setSubmitting(true);
+    try {
+      await onSubmit(TEST_KEY);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -158,6 +191,17 @@ export function LicenseInput({
         >
           {submitting ? 'Activating...' : 'Activate'}
         </button>
+        {import.meta.env.DEV && (
+          <button
+            type="button"
+            className="license-input__test-key"
+            onClick={handleUseTestKey}
+            disabled={disabled || submitting}
+            data-testid="use-test-key"
+          >
+            Use test key (dev only)
+          </button>
+        )}
       </div>
     </form>
   );
