@@ -1513,6 +1513,201 @@ a:hover { text-decoration: underline; }
 }
 .chat__vision-text { line-height: 1; }
 
+/* ─── R186: chat header + model switcher ─────────────────────────────── */
+/*
+ * Header над списком сообщений. Содержит ModelSwitcher (слева) и
+ * vision-badge (справа, если vision-модель настроена). Header sticky
+ * внутри chat-flex, чтобы при скролле длинного диалога кнопка
+ * «Change model» всегда была под рукой.
+ */
+.chat__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  flex: 0 0 auto;
+}
+.chat__vision--header {
+  margin-left: auto;
+}
+
+/* ModelSwitcher: button + dropdown */
+.model-switcher {
+  position: relative;
+  display: inline-block;
+}
+.model-switcher__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px; /* header-bar item, компактнее чем full 44dp */
+  padding: 4px 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+@media (min-width: 768px) {
+  /* На десктопе — touch-target 44dp per a11y guideline. */
+  .model-switcher__btn { min-height: 36px; }
+}
+.model-switcher__btn:hover { border-color: var(--accent); }
+.model-switcher__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.model-switcher__btn[aria-expanded="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.model-switcher__btn-label {
+  color: var(--fg-dim);
+  font-weight: 400;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.model-switcher__btn-current {
+  color: var(--fg);
+  font-weight: 600;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-switcher__caret {
+  color: var(--fg-dim);
+  font-size: 10px;
+  line-height: 1;
+}
+.model-switcher__dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  min-width: 240px;
+  max-width: 320px;
+  max-height: 320px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: model-switcher-slide-in 120ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .model-switcher__dropdown { animation: none; }
+}
+@keyframes model-switcher-slide-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.model-switcher__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.model-switcher__toolbar-text {
+  color: var(--fg-dim);
+  font-size: 11px;
+}
+.model-switcher__refresh {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg-dim);
+  font-size: 11px;
+  padding: 3px 10px;
+  min-height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.model-switcher__refresh:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.model-switcher__refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+.model-switcher__list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  outline: none;
+}
+.model-switcher__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px; /* a11y: touch target */
+  padding: 8px 12px;
+  cursor: pointer;
+  color: var(--fg);
+  font-size: 13px;
+  border-left: 2px solid transparent;
+  transition: background 80ms ease;
+}
+.model-switcher__option.is-focused {
+  background: var(--bg-soft);
+}
+.model-switcher__option:hover { background: var(--bg-soft); }
+.model-switcher__option.is-current {
+  font-weight: 600;
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+.model-switcher__option-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-switcher__option-size {
+  flex: 0 0 auto;
+  color: var(--fg-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.model-switcher__option-check {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+.model-switcher__empty {
+  padding: 16px 12px;
+  color: var(--fg-dim);
+  font-style: italic;
+  font-size: 12.5px;
+  text-align: center;
+  line-height: 1.5;
+}
+.model-switcher__empty code {
+  font-family: 'Cascadia Code', Menlo, monospace;
+  font-size: 11.5px;
+  background: rgba(255,255,255,0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-style: normal;
+}
+.model-switcher__empty-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+.model-switcher__empty-link:hover { text-decoration: underline; }
+
 /* ─── Settings (v5.1) ───────────────────────────────────────────────── */
 
 .settings {
