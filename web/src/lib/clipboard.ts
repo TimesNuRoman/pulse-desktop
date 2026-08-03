@@ -1,17 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-// Pulse - clipboard image reader (R160).
+// Pulse - clipboard helpers (combined R160 + R176).
 //
-// Detects when the user pastes an image (Ctrl+V / Cmd+V) and converts it
-// to a data URL the rest of the app can render in an <img> tag. The
-// browser's `paste` event exposes `clipboardData.items` with image types
-// (image/png, image/jpeg, image/webp) — we walk that list, read the first
-// matching item as a Blob, and FileReader.readAsDataURL gives us the
-// data URL. No external deps, no async clipboard API permissions needed.
+// R160 contributed `readImageFromClipboardEvent` (paste-image -> data URL)
+// R176 contributed `copyToClipboard` (text -> system clipboard, with
+// modern API + legacy fallback).
 //
-// The async `navigator.clipboard.read()` API is intentionally NOT used
-// here — it requires a permission grant in some browsers, fires errors
-// that we then have to swallow, and the `paste` event is what we already
-// have access to when the user explicitly pastes into our input.
+// Both functions are best-effort and never throw. The file is
+// intentionally small: two pure helpers, no shared state, no
+// dependencies.
 
 /** MIME types we accept as a pasted image. */
 const IMAGE_MIME_TYPES = new Set<string>([
@@ -64,4 +60,44 @@ function blobToDataUrl(blob: Blob): Promise<string> {
       reject(reader.error ?? new Error('FileReader error'));
     reader.readAsDataURL(blob);
   });
+}
+
+/**
+ * Copy a plain-text string to the system clipboard.
+ *
+ * Tries `navigator.clipboard.writeText` first. If the modern API is
+ * unavailable OR the call rejects, falls back to a hidden
+ * `<textarea>` + `document.execCommand('copy')`. Both paths are
+ * best-effort - any failure returns `false` rather than throwing,
+ * so the caller can decide whether to show UI feedback.
+ */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Permission denied, insecure context, etc. Fall through to legacy.
+    }
+  }
+  return legacyCopy(text);
+}
+
+function legacyCopy(text: string): boolean {
+  if (typeof document === 'undefined') return false;
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  ta.style.pointerEvents = 'none';
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  }
+  document.body.removeChild(ta);
+  return ok;
 }

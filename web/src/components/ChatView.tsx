@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatMessage, ToolCall } from '../types';
-import { renderCode } from './CodeBlock';
 import { captureScreen, getAutostart, setAutostart, getSTTEngine } from '../api';
 import { ChatInput } from './ChatInput';
 import {
@@ -34,6 +33,7 @@ import {
   readRoutingOverride,
   writeRoutingOverride,
 } from '../llm/routing-ui';
+<<<<<<< HEAD
 // R174: chat history persistence + sidebar.
 import {
   saveChat,
@@ -44,6 +44,8 @@ import {
   type ChatSummary,
 } from '../lib/chatHistory';
 import { ChatSidebar } from './ChatSidebar';
+// R176: code block "Copy" button.
+import { renderChatCode } from './ChatCodeBlock';
 
 const SEED: ChatMessage = {
   id: 'seed-1',
@@ -886,7 +888,7 @@ export function ChatView() {
               <div className="chat__content">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
-                  components={{ code: renderCode }}
+                  components={{ code: renderChatCode }}
                 >
                   {m.content}
                 </ReactMarkdown>
