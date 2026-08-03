@@ -32,6 +32,16 @@ import {
   readRoutingOverride,
   writeRoutingOverride,
 } from '../llm/routing-ui';
+// R174: chat history persistence + sidebar.
+import {
+  saveChat,
+  loadAllChats,
+  loadChat,
+  deleteChat,
+  renameChat,
+  type ChatSummary,
+} from '../lib/chatHistory';
+import { ChatSidebar } from './ChatSidebar';
 
 const SEED: ChatMessage = {
   id: 'seed-1',
@@ -112,6 +122,29 @@ export function ChatView() {
   const [llmError, setLlmError] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [sttAvailable, setSttAvailable] = useState(true);
+  // R174: chat history state. `currentChatId` is stable across renames,
+  // stored to localStorage so refreshes restore the active conversation.
+  // Initial value picked on first render via lazy init.
+  const [currentChatId, setCurrentChatId] = useState<string>(() => genId());
+  const [chatTitle, setChatTitle] = useState<string>('Новый чат');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [chats, setChats] = useState<ChatSummary[]>([]);
+  // Refs that mirror state so debounced save uses the latest values
+  // (avoids stale-closure issues inside setTimeout callbacks).
+  const messagesRef = useRef<ChatMessage[]>([SEED]);
+  const titleRef = useRef<string>('Новый чат');
+  const chatIdRef = useRef<string>(currentChatId);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  useEffect(() => {
+    titleRef.current = chatTitle;
+  }, [chatTitle]);
+  useEffect(() => {
+    chatIdRef.current = currentChatId;
+  }, [currentChatId]);
+  // Debounced save: 400ms after the last messages change.
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -176,6 +209,124 @@ export function ChatView() {
       }
     };
   }, []);
+
+  // ─── R174: initial load + history integration ──────────────────────────
+  // On mount: load most recent chat if any, else start with SEED only.
+  // The "current chat id" we just generated is discarded if we adopt a
+  // saved conversation (so the sidebar's "active" highlight matches).
+  useEffect(() => {
+    const list = loadAllChats();
+    setChats(list);
+    if (list.length > 0) {
+      const top = list[0];
+      const loaded = loadChat(top.id);
+      if (loaded.length > 0) {
+        setCurrentChatId(top.id);
+        setChatTitle(top.title);
+        setMessages(loaded);
+      }
+    }
+  }, []);
+
+  // R174: title auto-generation. Once the first user message lands, set
+  // the title from its text (truncated to 50 chars). Renames from the
+  // sidebar take precedence (we skip if title is non-default).
+  useEffect(() => {
+    if (chatTitle !== 'Новый чат') return;
+    const firstUser = messages.find((m) => m.role === 'user' && m.content.trim());
+    if (!firstUser) return;
+    const t = firstUser.content.trim();
+    setChatTitle(t.length <= 50 ? t : t.slice(0, 49).trimEnd() + '…');
+  }, [messages, chatTitle]);
+
+  // R174: debounced save. 400ms after the last messages change, persist
+  // current conversation. Streaming updates collapse into one write.
+  useEffect(() => {
+    // Skip the very first render — initial state has only SEED, no point
+    // saving an empty conversation (loadAllChats filters it anyway).
+    const hasUser = messages.some((m) => m.role === 'user');
+    if (!hasUser) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveChat(chatIdRef.current, titleRef.current, messagesRef.current);
+      setChats(loadAllChats());
+    }, 400);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [messages]);
+
+  // R174: beforeunload — flush any pending save synchronously.
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      const hasUser = messagesRef.current.some((m) => m.role === 'user');
+      if (hasUser) {
+        saveChat(chatIdRef.current, titleRef.current, messagesRef.current);
+      }
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, []);
+
+  // R174: Ctrl+B toggles the sidebar (Telegram-style).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        setSidebarCollapsed((cur) => !cur);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // R174: handlers wired to the sidebar.
+  function onNewChat() {
+    // Persist the current conversation first (if it has any user content).
+    const hasUser = messagesRef.current.some((m) => m.role === 'user');
+    if (hasUser) {
+      saveChat(chatIdRef.current, titleRef.current, messagesRef.current);
+    }
+    const newId = genId();
+    setCurrentChatId(newId);
+    setChatTitle('Новый чат');
+    setMessages([SEED]);
+    setChats(loadAllChats());
+  }
+
+  function onSelectChat(id: string) {
+    if (id === currentChatId) return;
+    // Persist current before switching.
+    const hasUser = messagesRef.current.some((m) => m.role === 'user');
+    if (hasUser) {
+      saveChat(chatIdRef.current, titleRef.current, messagesRef.current);
+    }
+    const loaded = loadChat(id);
+    if (loaded.length === 0) return;
+    const summary = chats.find((c) => c.id === id);
+    setCurrentChatId(id);
+    setChatTitle(summary?.title || 'Чат');
+    setMessages(loaded);
+    setChats(loadAllChats());
+  }
+
+  function onDeleteChat(id: string) {
+    deleteChat(id);
+    if (id === currentChatId) {
+      const newId = genId();
+      setCurrentChatId(newId);
+      setChatTitle('Новый чат');
+      setMessages([SEED]);
+    }
+    setChats(loadAllChats());
+  }
+
+  function onRenameChat(id: string, newTitle: string) {
+    renameChat(id, newTitle);
+    if (id === currentChatId) setChatTitle(newTitle);
+    setChats(loadAllChats());
+  }
 
   // ── core submit (выделено, чтобы и onSubmit, и onDescribe использовали одну логику) ──
   interface SubmitOpts {
@@ -569,7 +720,18 @@ export function ChatView() {
   const noKey = !cfg.hasKey;
 
   return (
-    <div className="chat">
+    <div className="chat-layout">
+      <ChatSidebar
+        chats={chats}
+        currentId={currentChatId}
+        isCollapsed={sidebarCollapsed}
+        onSelect={onSelectChat}
+        onNewChat={onNewChat}
+        onDelete={onDeleteChat}
+        onRename={onRenameChat}
+        onToggle={() => setSidebarCollapsed((cur) => !cur)}
+      />
+      <div className="chat">
       <div className="chat__list" ref={listRef}>
         {messages.map((m) => (
           <div
@@ -899,6 +1061,7 @@ export function ChatView() {
           }}
         />
       )}
+      </div>
     </div>
   );
 }
