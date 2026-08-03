@@ -36,6 +36,7 @@ import { licenseStore } from '../lib/license/store';
 import { PRO_FEATURES } from '../lib/pro-features';
 import { UpgradeModal } from './PRO/UpgradeModal';
 import { PROSettings } from './settings/PROSettings';
+import { HardwareSection } from './settings/HardwareSection';
 
 const LS_MODEL = 'pulse.model.override';
 const LS_VISION = 'pulse.visionModel.override';
@@ -311,6 +312,9 @@ export function SettingsView() {
           </a>
         </div>
       </div>
+
+      {/* R175: detected hardware + recommended Ollama models. Lazy on mount. */}
+      <HardwareSection />
 
       <div className="settings__section">
         <div className="settings__title">Endpoints & key</div>

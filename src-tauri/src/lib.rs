@@ -36,6 +36,7 @@ pub mod engine;
 pub mod web_search;
 mod license;
 mod youtube;
+pub mod hardware;
 
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
@@ -631,6 +632,113 @@ fn parse_code(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// R175: hardware detector — публичный API.
+//
+// Снимает снимок железа (CPU/RAM/Disk/OS + tier-рекомендацию) через `sysinfo`.
+// Блокирующий — оборачиваем в `tokio::task::spawn_blocking`, чтобы не вешать
+// UI-runtime на момент сканирования (sysinfo::System::new_all() дёргает
+// /proc/stat, WMI и прочее IO).
+//
+// Поведение:
+//   * Tauri: возвращает `HardwareSpec` (CPU brand/cores/threads/freq, RAM
+//     total/available, disk free/total/mount, OS name/version/kernel/arch,
+//     пустой gpus[] в MVP, recommended_tier из Low/Mid/High/Ultra).
+//   * Если что-то упало — возвращаем Ok с дефолтным HardwareSpec, чтобы
+//     фронт не ловил exception при ошибке IO в sandbox-окружениях.
+//
+// Inline-реализация: в `hardware::detect::detect_hardware` заложен `os_info`
+// (не в deps). Чтобы не плодить новых crate-зависимостей, дублируем логику
+// здесь — она маленькая (~40 LoC), и весь расчёт tier-а делается в
+// `resolve_tier_inline()` ниже. Detect.rs — orphan код (не зарегистрирован
+// в `generate_handler!`), его дочинит отдельный R-round.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// R175: маппинг RAM+VRAM → Tier. Дубль из `hardware::detect::resolve_tier`,
+/// чтобы Tauri-команда не зависела от `os_info`.
+fn resolve_tier_inline(ram_total_gb: f32, max_vram_gb: u32) -> hardware::Tier {
+    let r = ram_total_gb as u32;
+    let v = max_vram_gb;
+    if r <= 8 {
+        return hardware::Tier::Low;
+    }
+    if r <= 16 && v <= 4 {
+        return hardware::Tier::Mid;
+    }
+    if r <= 32 {
+        return hardware::Tier::High;
+    }
+    hardware::Tier::Ultra
+}
+
+/// R175: блокирующее ядро детектора. Запускается в `spawn_blocking`.
+fn detect_hardware_blocking() -> hardware::HardwareSpec {
+    use sysinfo::{Disks, System};
+    let mut sys = System::new_all();
+    sys.refresh_all();
+    let cpus = sys.cpus();
+    let first = cpus.first();
+    let cores_usize = sys.physical_core_count().unwrap_or_else(|| cpus.len());
+    let cpu = hardware::CpuInfo {
+        brand: first.map(|c| c.brand().to_string()).unwrap_or_default(),
+        cores: cores_usize as u32,
+        threads: cpus.len() as u32,
+        frequency_mhz: first.map(|c| c.frequency() as u32).unwrap_or(0),
+    };
+    let ram = hardware::RamInfo {
+        total_gb: sys.total_memory() as f32 / 1e9,
+        available_gb: sys.available_memory() as f32 / 1e9,
+    };
+    // Берём диск с максимальным свободным местом — туда логичнее всего
+    // качать Ollama-модели (5-50 ГБ). Если дисков нет — заглушка.
+    let disks = Disks::new_with_refreshed_list();
+    let main_disk = disks
+        .iter()
+        .max_by_key(|d| d.available_space())
+        .or_else(|| disks.iter().next());
+    let disk = match main_disk {
+        Some(d) => hardware::DiskInfo {
+            free_gb: d.available_space() as f32 / 1e9,
+            total_gb: d.total_space() as f32 / 1e9,
+            mount_point: d.mount_point().to_string_lossy().to_string(),
+        },
+        None => hardware::DiskInfo {
+            free_gb: 0.0,
+            total_gb: 0.0,
+            mount_point: String::new(),
+        },
+    };
+    let os = hardware::OsInfo {
+        // OS detection из sysinfo: System::name() возвращает "Windows" / "Linux" /
+        // "macOS". Kernel version — `System::kernel_version()`.
+        name: System::name().unwrap_or_else(|| "unknown".to_string()),
+        version: System::os_version().unwrap_or_default(),
+        kernel: System::kernel_version().unwrap_or_default(),
+        arch: std::env::consts::ARCH.to_string(),
+    };
+    let gpus: Vec<hardware::GpuInfo> = Vec::new();
+    let recommended_tier = resolve_tier_inline(ram.total_gb, 0);
+    hardware::HardwareSpec {
+        arch: os.arch.clone(),
+        os,
+        cpu,
+        ram,
+        disk,
+        gpus,
+        recommended_tier,
+    }
+}
+
+/// Снять снимок железа текущей машины. Best-effort: при ошибке возвращаем
+/// дефолтный `HardwareSpec` (tier=Low), чтобы UI не падал.
+#[tauri::command]
+async fn detect_hardware() -> Result<hardware::HardwareSpec, String> {
+    let spec = tokio::task::spawn_blocking(detect_hardware_blocking)
+        .await
+        .map_err(|e| format!("detect_hardware join: {e}"))?;
+    Ok(spec)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Файловый движок (v4 MVP)
 //
 // Команды вызываются фронтом через `invoke('...')` и не требуют capabilities
@@ -1198,6 +1306,8 @@ pub fn run() {
             license::license_write,
             license::license_clear,
             license::license_ping,
+            // R175: hardware detector (CPU/RAM/Disk/OS + tier via sysinfo)
+            detect_hardware,
         ])
         .setup(|app| {
             // Поднимаем Ollama в фоне (sidecar) ДО остальной инициализации,
