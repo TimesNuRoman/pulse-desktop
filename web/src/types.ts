@@ -164,6 +164,66 @@ export interface SysInfo {
   uptime_secs: number;
 }
 
+// ─── R175: hardware detector (Settings → About → «Your hardware») ──────────
+//
+// Зеркало Rust `HardwareSpec` (src-tauri/src/hardware/mod.rs).
+// На фронт попадает через `invoke<HardwareSpec>('detect_hardware')`.
+// Модель рекомендаций (1-3 карточки) вычисляется в
+// `web/src/lib/modelRecommender.ts` — pure функция, отдельно тестируемая.
+
+/** Тариф железа, на основе которого подбираются Ollama-модели. */
+export type HardwareTier = 'Low' | 'Mid' | 'High' | 'Ultra';
+
+export interface OsInfo {
+  /** "Windows" / "Linux" / "Mac OS" */
+  name: string;
+  /** "10.0.22631" */
+  version: string;
+  /** Kernel: "10.0.22631" / "6.5.0-15-generic" / "Darwin Kernel 23.5.0". */
+  kernel: string;
+  /** "x86_64" / "aarch64" */
+  arch: string;
+}
+
+export interface CpuInfo {
+  /** "AMD Ryzen 7 5800X" / "Intel Core i7-13700K". */
+  brand: string;
+  /** Физических ядер. */
+  cores: number;
+  /** Логических ядер = потоки. */
+  threads: number;
+  /** Базовая частота в МГц. */
+  frequency_mhz: number;
+}
+
+export interface RamInfo {
+  total_gb: number;
+  available_gb: number;
+}
+
+export interface GpuInfo {
+  vendor: string;
+  name: string;
+  /** Видеопамять в ГБ. `null` для интегрированных (берёт RAM). */
+  vram_gb: number | null;
+  driver_version: string | null;
+  api: string[];
+}
+
+/** Снимок железа, который Tauri отдаёт фронту.
+ *  На web (браузер / dev-сервер) — фронт собирает web-версию сам через
+ *  `web/src/lib/hardwareDetector.ts` (navigator + WebGL). */
+export interface HardwareSpec {
+  arch: string;
+  os: OsInfo;
+  cpu: CpuInfo;
+  ram: RamInfo;
+  disk: DiskInfo;
+  /** MVP: всегда пустой (GPU-детект через WMI/NVML отложен). */
+  gpus: GpuInfo[];
+  recommended_tier: HardwareTier;
+}
+
 /** Результат launch_app. */
 export interface LaunchResult {
   pid: number | null;

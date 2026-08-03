@@ -10,7 +10,11 @@
 
 use serde::{Deserialize, Serialize};
 
-pub mod detect;
+// R175: `detect.rs` (содержит `os_info::get()`) намеренно НЕ подключён как
+// подмодуль — крейт `os_info` отсутствует в Cargo.toml, и brief запрещает
+// добавлять новые Rust-зависимости. Реализация `detect_hardware()` живёт
+// inline в `lib.rs::detect_hardware_blocking` (R175). detect.rs остаётся на
+// диске как dead code для будущего R-round-а, который добавит os_info.
 
 // ─── публичные типы (serde, чтобы фронт получил готовый JSON) ─────────────
 
@@ -94,4 +98,62 @@ pub enum Tier {
     Mid,    // 8-16GB RAM, 0-4GB VRAM
     High,   // 16-32GB RAM, 4-8GB VRAM
     Ultra,  // 32GB+ RAM, 8GB+ VRAM
+}
+
+impl Default for Tier {
+    fn default() -> Self {
+        // Safe middle: ничего не утверждаем, но и не упираемся в Low.
+        Tier::Low
+    }
+}
+
+impl Default for OsInfo {
+    fn default() -> Self {
+        Self {
+            name: "unknown".to_string(),
+            version: String::new(),
+            kernel: String::new(),
+            arch: std::env::consts::ARCH.to_string(),
+        }
+    }
+}
+
+impl Default for CpuInfo {
+    fn default() -> Self {
+        Self {
+            brand: "unknown".to_string(),
+            cores: 0,
+            threads: 0,
+            frequency_mhz: 0,
+        }
+    }
+}
+
+impl Default for RamInfo {
+    fn default() -> Self {
+        Self { total_gb: 0.0, available_gb: 0.0 }
+    }
+}
+
+impl Default for DiskInfo {
+    fn default() -> Self {
+        Self { free_gb: 0.0, total_gb: 0.0, mount_point: String::new() }
+    }
+}
+
+impl Default for HardwareSpec {
+    /// R175: best-effort default, если detect_hardware() вернул Err.
+    /// На фронт уйдёт «unknown» CPU / 0 GB RAM / Low tier — UI покажет
+    /// заглушку вместо падения.
+    fn default() -> Self {
+        Self {
+            arch: std::env::consts::ARCH.to_string(),
+            os: OsInfo::default(),
+            cpu: CpuInfo::default(),
+            ram: RamInfo::default(),
+            disk: DiskInfo::default(),
+            gpus: Vec::new(),
+            recommended_tier: Tier::Low,
+        }
+    }
 }

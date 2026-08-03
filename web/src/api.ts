@@ -7,6 +7,7 @@ import type {
   ProcInfo,
   SysInfo,
   LaunchResult,
+  HardwareSpec,
 } from './types';
 import { createStubSTTEngine } from './voice/stt';
 import type { STTEngine } from './voice/stt';
@@ -400,6 +401,26 @@ export async function systemInfo(): Promise<SysInfo> {
     };
   }
   return invoke<SysInfo>('system_info');
+}
+
+// ─── R175: hardware detector ────────────────────────────────────────────────
+
+/** Снять снимок железа. Tauri: `invoke('detect_hardware')`.
+ *  Web/Capacitor: возвращаем «unknown» HardwareSpec — web-API в Settings →
+ *  About дополнит картину через `hardwareDetector.detectWeb()`. */
+export async function detectHardware(): Promise<HardwareSpec> {
+  if (!IN_TAURI) {
+    return {
+      arch: 'unknown',
+      os: { name: 'unknown', version: '', kernel: '', arch: 'unknown' },
+      cpu: { brand: 'unknown', cores: 0, threads: 0, frequency_mhz: 0 },
+      ram: { total_gb: 0, available_gb: 0 },
+      disk: { mount: '', total_gb: 0, free_gb: 0 },
+      gpus: [],
+      recommended_tier: 'Low',
+    };
+  }
+  return invoke<HardwareSpec>('detect_hardware');
 }
 
 // ─── openUrl ───────────────────────────────────────────────────────────────
