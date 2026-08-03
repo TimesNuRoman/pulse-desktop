@@ -188,3 +188,69 @@ describe('LicenseInput — production build', () => {
     expect(testIdIdx).toBeGreaterThan(devGuardIdx);
   });
 });
+
+// ── R191 trial / expired-state coverage ───────────────────────────────
+
+describe('LicenseInput — R191 expired-state behaviour', () => {
+  test('still renders 5 chunk inputs when mounted standalone (used in expired-state PROSettings)', () => {
+    // PROSettings mounts <LicenseInput> for the 'expired' branch
+    // ("Trial ended → activate a key"). The input contract is the
+    // same: 5 chunks + a submit button.
+    const h = mount(<LicenseInput onSubmit={() => {}} />);
+    const chunks = chunkInputs(h);
+    expect(chunks).toHaveLength(5);
+    expect(
+      h.container.querySelector<HTMLButtonElement>('.license-input__submit'),
+    ).not.toBeNull();
+    unmount(h);
+  });
+
+  test('surfaces setKey rejection in the error slot (expired-state user pastes an invalid key)', async () => {
+    const onSubmit = vi.fn().mockRejectedValue(new Error('activation failed'));
+    const h = mount(<LicenseInput onSubmit={onSubmit} />);
+    // The dev "Use test key" button populates chunks AND calls
+    // onSubmit(TEST_KEY) in one click — same path the user takes
+    // when they paste a real key into the 5 chunks. Use it to drive
+    // the rejection flow.
+    const devBtn = h.container.querySelector<HTMLButtonElement>(
+      '[data-testid="use-test-key"]',
+    )!;
+    await act(async () => {
+      devBtn.click();
+    });
+    const err = h.container.querySelector<HTMLDivElement>('.license-input__error');
+    expect(err?.textContent ?? '').toContain('activation failed');
+    unmount(h);
+  });
+
+  test('submit button is disabled while a setKey call is in flight (busy state)', async () => {
+    let resolveSubmit: () => void = () => {};
+    const onSubmit = vi.fn(
+      () =>
+        new Promise<void>((res) => {
+          resolveSubmit = res;
+        }),
+    );
+    const h = mount(<LicenseInput onSubmit={onSubmit} />);
+    const devBtn = h.container.querySelector<HTMLButtonElement>(
+      '[data-testid="use-test-key"]',
+    )!;
+    // The dev button drives both chunk fill AND the in-flight submit.
+    // We assert busy state by checking the dev button's own disabled
+    // flag mid-flight (it has the same `submitting` gate as the main
+    // submit button).
+    expect(devBtn.disabled).toBe(false);
+    await act(async () => {
+      devBtn.click();
+    });
+    // In-flight: dev button disabled.
+    expect(devBtn.disabled).toBe(true);
+    // Resolve and assert the submission went through.
+    await act(async () => {
+      resolveSubmit();
+    });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledWith(TEST_KEY);
+    unmount(h);
+  });
+});

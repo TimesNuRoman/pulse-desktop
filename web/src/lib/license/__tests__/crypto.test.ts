@@ -25,6 +25,7 @@ describe('crypto — AES-GCM roundtrip', () => {
       tier: 'pro',
       expiresAt: null,
       lastValidated: 1700000000000,
+      trialStartedAt: null,
     };
     const enc = await encryptLicense(lic);
     const dec = await decryptLicense(enc);
@@ -38,6 +39,7 @@ describe('crypto — AES-GCM roundtrip', () => {
       tier: 'pro',
       expiresAt: null,
       lastValidated: 1700000000000,
+      trialStartedAt: null,
     };
     const enc = await encryptLicense(lic);
     // Flip a bit in the middle (after the IV).
