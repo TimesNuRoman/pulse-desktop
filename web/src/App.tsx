@@ -14,8 +14,13 @@ import {
   capExitApp,
 } from './api';
 import { Onboarding, isOnboardingDone } from './mobile/Onboarding';
+import {
+  Onboarding as DesktopOnboarding,
+  isOnboardingDone as isDesktopOnboardingDone,
+} from './components/Onboarding';
 import { applyTheme, readTheme } from './mobile/theme';
 import { licenseStore } from './lib/license/store';
+import { getActiveTextModel } from './llm/client';
 
 type View = 'chat' | 'agent' | 'files' | 'habr' | 'web' | 'settings';
 type OllamaStatus =
@@ -48,6 +53,13 @@ export function App() {
 
   // Onboarding: показывается один раз на mobile при первом запуске.
   const [showOnboarding, setShowOnboarding] = useState(() => IS_MOBILE && !isOnboardingDone());
+
+  // R161: desktop (Windows) first-run welcome tour. Mobile has its own
+  // onboarding above; this one is gated to Tauri only and uses a different
+  // localStorage key so the two surfaces stay independent.
+  const [showDesktopOnboarding, setShowDesktopOnboarding] = useState(
+    () => !IS_MOBILE && !isDesktopOnboardingDone(),
+  );
 
   // ─── Theme (dark/system) — Pulse is dark-only, R96b ───────────────
   useEffect(() => {
@@ -148,6 +160,19 @@ export function App() {
         <Onboarding
           onDone={() => {
             setShowOnboarding(false);
+          }}
+        />
+      )}
+      {showDesktopOnboarding && (
+        <DesktopOnboarding
+          currentModel={getActiveTextModel()}
+          ollamaStatus={ollama.kind}
+          onDone={() => {
+            setShowDesktopOnboarding(false);
+          }}
+          onOpenSettings={() => {
+            setView('settings');
+            setShowDesktopOnboarding(false);
           }}
         />
       )}
@@ -288,7 +313,13 @@ export function App() {
         ) : view === 'web' ? (
           <WebSearchView />
         ) : view === 'settings' ? (
-          <SettingsView />
+          <SettingsView
+            onShowWelcomeTour={() => {
+              // Flag is already cleared by SettingsView; flip the state
+              // so the modal reopens without a reload.
+              setShowDesktopOnboarding(true);
+            }}
+          />
         ) : (
           <HabrSearch />
         )}

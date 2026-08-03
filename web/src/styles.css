@@ -286,6 +286,18 @@ a:hover { text-decoration: underline; }
   border-top: 1px solid var(--border);
   align-items: center;
 }
+/* R160: новый wrapper для <form> внутри ChatInput — та же лента, что и
+   старая chat__form, но без верхнего border (он уже у родителя-обёртки,
+   если есть) и без padding-top. До R160 chat__form был контейнером всего
+   ряда; теперь chat__form — это просто горизонтальный ряд иконок, а сам
+   <form> живёт в ChatInput как .chat__inputrow. */
+.chat__inputrow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
 .chat__input {
   flex: 1;
   background: var(--bg-elev);
@@ -366,6 +378,13 @@ a:hover { text-decoration: underline; }
   object-fit: contain;
   background: #000;
   cursor: zoom-in;
+}
+/* R160: pasted-image preview внутри chat__attach. Жёсткий лимит 80px
+   (по сравнению с 140px у in-chat screenshot). Узкий и неагрессивный —
+   превью должно намекать «я здесь», не занимая пол-экрана. */
+.chat__image--paste {
+  max-height: 80px;
+  cursor: default;
 }
 /* Развёрнутая картинка (toggle по клику). data-expanded="1" — без ограничения высоты. */
 .chat__image[data-expanded="1"] {
@@ -1860,6 +1879,137 @@ a:hover { text-decoration: underline; }
   text-align: center;
   padding-top: 4px;
   user-select: none;
+}
+
+/* ─── R161: Onboarding (desktop first-run) ─────────────────────────────
+ *  Distinct from `.onb*` (mobile, Capacitor) so the two surfaces stay
+ *  independent. 56dp touch targets per Roman's a11y rule #11. Dark only.
+ */
+.onb-desk {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  -webkit-tap-highlight-color: transparent;
+  animation: onb-desk-fade 160ms ease-out;
+}
+.onb-desk__card {
+  width: 100%;
+  max-width: 460px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px 24px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+.onb-desk__counter {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  text-align: center;
+}
+.onb-desk__title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  text-align: center;
+  color: var(--fg);
+  line-height: 1.25;
+}
+.onb-desk__body {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--fg);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.onb-desk__lede { margin: 0; }
+.onb-desk__lede code {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Cascadia Code', Menlo, monospace;
+  font-size: 12px;
+}
+.onb-desk__bullets {
+  margin: 4px 0 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.onb-desk__bullets li { line-height: 1.45; }
+.onb-desk__btn--cta {
+  align-self: stretch;
+  width: 100%;
+}
+.onb-desk__dots {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  padding: 4px 0 0;
+}
+.onb-desk__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background 0.2s, transform 0.2s;
+}
+.onb-desk__dot.is-active {
+  background: var(--accent);
+  transform: scale(1.3);
+}
+.onb-desk__nav {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 4px;
+}
+.onb-desk__btn {
+  flex: 1;
+  /* Roman's a11y rule: 56dp min-height for touch-friendly targets. */
+  min-height: 56px;
+  padding: 0 20px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.08s, background 0.15s, border-color 0.15s;
+}
+.onb-desk__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.onb-desk__btn:active { transform: scale(0.98); }
+.onb-desk__btn--primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.onb-desk__btn--primary:hover { filter: brightness(1.08); }
+.onb-desk__btn--ghost { background: transparent; }
+.onb-desk__btn--ghost:hover { background: var(--bg); }
+
+@keyframes onb-desk-fade {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
 /* ─── Pull-to-refresh indicator ─────────────────────────────────────── */

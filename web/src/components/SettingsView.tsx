@@ -31,6 +31,7 @@ import type { ModelCapabilities } from '../llm/types';
 import { readTheme, writeTheme, applyTheme, type Theme } from '../mobile/theme';
 import { IS_MOBILE, IS_DESKTOP } from '../api';
 import { resetOnboarding } from '../mobile/Onboarding';
+import { resetOnboarding as resetDesktopOnboarding } from './Onboarding';
 import { ProRequiredError } from '../lib/license/types';
 import { licenseStore } from '../lib/license/store';
 import { PRO_FEATURES } from '../lib/pro-features';
@@ -94,7 +95,7 @@ function ModelCaps({ model }: { model: string }) {
   );
 }
 
-export function SettingsView() {
+export function SettingsView({ onShowWelcomeTour }: { onShowWelcomeTour?: () => void } = {}) {
   // Снимок env-конфига при монтировании (для дефолтов в селекте).
   const initial = useMemo(() => {
     const cfg = getLLMConfig();
@@ -265,6 +266,38 @@ export function SettingsView() {
         <div className="settings__hint">
           Тема применяется мгновенно. Persist в localStorage <code>pulse.theme</code>.
           Pulse — dark-only; «Системная» всегда даёт тёмную.
+        </div>
+      </div>
+
+      <div className="settings__section">
+        <div className="settings__title">First-run tour</div>
+        <div className="settings__hint">
+          Pulse shows a 3-step welcome tour on first launch. Reopen it any time.
+        </div>
+        <div className="settings__row">
+          <div className="settings__label">Welcome tour</div>
+          <div className="settings__field">
+            <button
+              type="button"
+              className="settings__save"
+              style={{ background: 'var(--bg-elev)', color: 'var(--fg)' }}
+              onClick={() => {
+                resetDesktopOnboarding();
+                if (onShowWelcomeTour) {
+                  onShowWelcomeTour();
+                } else {
+                  setSaved(true);
+                }
+              }}
+            >
+              Show welcome tour again
+            </button>
+            {!onShowWelcomeTour && saved && (
+              <span className="settings__hint" style={{ marginLeft: 8 }}>
+                Reopen the app to see the tour.
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
