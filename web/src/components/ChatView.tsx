@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect, FormEvent } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatMessage, ToolCall } from '../types';
 import { captureScreen, getAutostart, setAutostart, getSTTEngine } from '../api';
+import { ChatInput } from './ChatInput';
 import {
   getLLMConfig,
   getProviderName,
@@ -114,6 +115,7 @@ export function ChatView() {
   const [sttAvailable, setSttAvailable] = useState(true);
   const listRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // (input lives inside ChatInput now; ref is forwarded to it for STT focus)
   const abortRef = useRef<AbortController | null>(null);
   // Хранит «хвост» истории, который ушёл в LLM — чтобы stop корректно убирал streaming-флаг.
   const assistantIdRef = useRef<string | null>(null);
@@ -355,9 +357,12 @@ export function ChatView() {
     }
   }
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    const text = draft.trim();
+  // R160: разнесено — ChatInput дёргает onSubmitText(text) для текстового
+  // submit и onVisionResponse(...) для paste-image submit. Оба пути
+  // сходятся на runSubmitCore (через разные входы). Slash-команда
+  // /describe по-прежнему живёт здесь — она снимает скриншот и гонит
+  // его в vision-LLM, минуя paste-image preview.
+  async function onSubmitText(text: string) {
     // Slash-команда /describe: снять скриншот + отправить в vision-модель.
     // Pulse v5.1 — vision quick action. Делаем ДО проверки пустого текста,
     // чтобы юзер мог просто напечатать "/describe" без Enter.
@@ -374,6 +379,42 @@ export function ChatView() {
     setAttachment(null);
     setDraft('');
     await runSubmitCore({ text, attachment: attForPrompt });
+  }
+
+  /**
+   * R160: paste-image submit. ChatInput уже дёрнул vision API и получил
+   * ответ; наша задача — добавить user-bubble (с картинкой) и assistant-
+   * bubble (с текстом) в историю чата. Идём через runSubmitCore, чтобы
+   * маршрутизация / smart-engine / agent-loop работали идентично обычному
+   * submit (vision-tool fallback и т.д.). Передаём картинку как
+   * attachmentImageDataUrl — это уже поддерживается toLLMMessages и
+   * buildMultimodalMessage.
+   */
+  async function onVisionResponse(resp: {
+    userText: string;
+    imageDataUrl: string;
+    assistantText: string;
+  }) {
+    if (busy) return;
+    setLlmError(null);
+    const userMsg: ChatMessage = {
+      id: genId(),
+      role: 'user',
+      content: resp.userText,
+      ts: Date.now(),
+      attachmentImageDataUrl: resp.imageDataUrl,
+      attachmentCaption: 'Изображение из буфера',
+    };
+    // Простой flow: не дёргаем agent loop — vision уже отработала. Просто
+    // добавляем два bubble в историю. Если нужен будет tool-call / search
+    // поверх картинки — это уже R161+.
+    const assistantMsg: ChatMessage = {
+      id: genId(),
+      role: 'assistant',
+      content: resp.assistantText,
+      ts: Date.now() + 1,
+    };
+    setMessages((cur) => [...cur, userMsg, assistantMsg]);
   }
 
   function onStop() {
@@ -737,129 +778,126 @@ export function ChatView() {
         </div>
       )}
 
-      <form className="chat__form" onSubmit={onSubmit}>
-        <button
-          type="button"
-          className="chat__iconbtn"
-          title="Скриншот основного монитора"
-          onClick={() => void onCapture()}
-          disabled={screenshotBusy}
-        >
-          {screenshotBusy ? '…' : '📸'}
-        </button>
-        <button
-          type="button"
-          className="chat__iconbtn"
-          title={attachment ? `Прикреплён: ${attachment.info.name} (повторный клик — заменить)` : 'Прикрепить файл'}
-          onClick={() => void onAttach()}
-          disabled={attachBusy}
-        >
-          {attachBusy ? '…' : '📎'}
-        </button>
-        {/* Pulse v5.1 — vision quick action: скриншот + авто-отправка в vision-LLM.
-            Если vision недоступна — кнопка disabled, badge объясняет. */}
-        <button
-          type="button"
-          className="chat__iconbtn chat__iconbtn--vision"
-          title={
-            isVisionAvailable()
-              ? 'Снять скриншот и описать (vision-LLM)'
-              : 'Vision-модель не настроена (см. Settings)'
-          }
-          onClick={() => void onDescribe()}
-          disabled={screenshotBusy || busy || !isVisionAvailable()}
-        >
-          {screenshotBusy ? '…' : '👁️'}
-        </button>
-        <button
-          type="button"
-          className={`chat__iconbtn chat__iconbtn--mic${recording ? ' is-rec' : ''}`}
-          title={
-            !sttAvailable
-              ? 'Голосовой ввод недоступен'
-              : recording
-                ? 'Идёт запись… (клик — стоп)'
-                : 'Голосовой ввод (mic → текст в поле)'
-          }
-          aria-label={recording ? 'Остановить запись' : 'Начать голосовой ввод'}
-          aria-pressed={recording}
-          onClick={() => void onToggleMic()}
-          disabled={!sttAvailable}
-        >
-          {recording ? '⏺' : '🎤'}
-        </button>
-        <input
-          ref={inputRef}
-          className="chat__input"
-          type="text"
-          inputMode="text"
-          enterKeyHint="send"
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="sentences"
-          spellCheck={false}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={
-            recording
-              ? '🎙 Говорите…'
-              : noKey
-                ? 'API-ключ не задан…'
-                : attachment
-                  ? `Комментарий к ${attachment.info.name}…`
-                  : `Спросить Pulse (${provider}, ${cfg.model}${isVisionAvailable() ? ' · 🖼️ vision' : ''})…`
-          }
-          autoFocus={typeof window !== 'undefined' && window.innerWidth >= 768}
-          disabled={busy || recording}
-        />
-        {/* Vision badge: виден всегда, когда vision-модель сконфигурирована.
-            Показывает какая именно vision-модель сейчас активна (с учётом override). */}
-        {isVisionAvailable() && (
-          <span
-            className="chat__vision"
-            title={`Vision-модель: ${cfg.visionModel}`}
-            aria-label={`Vision-модель: ${cfg.visionModel}`}
-          >
-            <span className="chat__vision-dot" aria-hidden />
-            <span className="chat__vision-text">🖼️ vision</span>
-          </span>
-        )}
-        <button
-          type="button"
-          className="chat__iconbtn chat__iconbtn--autostart"
-          title={
-            autostart === null
-              ? 'Автозапуск…'
-              : autostart
-                ? 'Автозапуск вкл (клик — выкл)'
-                : 'Автозапуск выкл (клик — вкл)'
-          }
-          onClick={() => void onToggleAutostart()}
-          disabled={autostart === null}
-          data-on={autostart ? '1' : '0'}
-        >
-          ⚙
-        </button>
-        {busy ? (
-          <button
-            type="button"
-            className="chat__send chat__send--stop"
-            onClick={onStop}
-            title="Остановить генерацию"
-          >
-            ■
-          </button>
-        ) : (
-          <button
-            className="chat__send"
-            type="submit"
-            disabled={(!draft.trim() && !attachment) || noKey}
-            title="Отправить"
-          >
-            ➤
-          </button>
-        )}
-      </form>
+      <ChatInput
+        value={draft}
+        onChange={setDraft}
+        onSubmitText={onSubmitText}
+        onVisionResponse={onVisionResponse}
+        onError={(msg) => setLlmError(msg)}
+        inputRef={inputRef}
+        busy={busy || recording}
+        provider={provider}
+        model={cfg.model}
+        visionAvailable={isVisionAvailable()}
+        visionModel={cfg.visionModel}
+        visionBaseUrl={cfg.baseUrl}
+        placeholder={
+          recording
+            ? '🎙 Говорите…'
+            : noKey
+              ? 'API-ключ не задан…'
+              : attachment
+                ? `Комментарий к ${attachment.info.name}…`
+                : undefined
+        }
+        leftToolbar={
+          <>
+            <button
+              type="button"
+              className="chat__iconbtn"
+              title="Скриншот основного монитора"
+              onClick={() => void onCapture()}
+              disabled={screenshotBusy}
+            >
+              {screenshotBusy ? '…' : '📸'}
+            </button>
+            <button
+              type="button"
+              className="chat__iconbtn"
+              title={attachment ? `Прикреплён: ${attachment.info.name} (повторный клик — заменить)` : 'Прикрепить файл'}
+              onClick={() => void onAttach()}
+              disabled={attachBusy}
+            >
+              {attachBusy ? '…' : '📎'}
+            </button>
+            {/* Pulse v5.1 — vision quick action: скриншот + авто-отправка в vision-LLM.
+                Если vision недоступна — кнопка disabled, badge объясняет. */}
+            <button
+              type="button"
+              className="chat__iconbtn chat__iconbtn--vision"
+              title={
+                isVisionAvailable()
+                  ? 'Снять скриншот и описать (vision-LLM)'
+                  : 'Vision-модель не настроена (см. Settings)'
+              }
+              onClick={() => void onDescribe()}
+              disabled={screenshotBusy || busy || !isVisionAvailable()}
+            >
+              {screenshotBusy ? '…' : '👁️'}
+            </button>
+            <button
+              type="button"
+              className={`chat__iconbtn chat__iconbtn--mic${recording ? ' is-rec' : ''}`}
+              title={
+                !sttAvailable
+                  ? 'Голосовой ввод недоступен'
+                  : recording
+                    ? 'Идёт запись… (клик — стоп)'
+                    : 'Голосовой ввод (mic → текст в поле)'
+              }
+              aria-label={recording ? 'Остановить запись' : 'Начать голосовой ввод'}
+              aria-pressed={recording}
+              onClick={() => void onToggleMic()}
+              disabled={!sttAvailable}
+            >
+              {recording ? '⏺' : '🎤'}
+            </button>
+          </>
+        }
+        rightToolbar={
+          <>
+            {/* Vision badge: виден всегда, когда vision-модель сконфигурирована.
+                Показывает какая именно vision-модель сейчас активна (с учётом override). */}
+            {isVisionAvailable() && (
+              <span
+                className="chat__vision"
+                title={`Vision-модель: ${cfg.visionModel}`}
+                aria-label={`Vision-модель: ${cfg.visionModel}`}
+              >
+                <span className="chat__vision-dot" aria-hidden />
+                <span className="chat__vision-text">🖼️ vision</span>
+              </span>
+            )}
+            <button
+              type="button"
+              className="chat__iconbtn chat__iconbtn--autostart"
+              title={
+                autostart === null
+                  ? 'Автозапуск…'
+                  : autostart
+                    ? 'Автозапуск вкл (клик — выкл)'
+                    : 'Автозапуск выкл (клик — вкл)'
+              }
+              onClick={() => void onToggleAutostart()}
+              disabled={autostart === null}
+              data-on={autostart ? '1' : '0'}
+            >
+              ⚙
+            </button>
+            {busy && (
+              <button
+                type="button"
+                className="chat__send chat__send--stop"
+                onClick={onStop}
+                title="Остановить генерацию"
+                data-testid="chat-stop"
+              >
+                ■
+              </button>
+            )}
+          </>
+        }
+      />
 
       {/* R89: routing override modal. Показывается по клику на chip'е
           low_confidence. Позволяет юзеру выбрать preferred mode для
