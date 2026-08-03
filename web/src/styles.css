@@ -417,6 +417,70 @@ a:hover { text-decoration: underline; }
   50%      { box-shadow: 0 0 0 6px rgba(247, 118, 142, 0); }
 }
 
+/* R188: voice button wrapper holds the mic button + (when recording)
+   an inline waveform and duration counter. The button itself reuses
+   the .chat__iconbtn--mic class above so the red recording state
+   already works. */
+.voice-button-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+.voice-button__icon {
+  display: block;
+  pointer-events: none;
+}
+.voice-button__duration {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+  min-width: 28px;
+  text-align: left;
+}
+.voice-button__error {
+  font-size: 11px;
+  color: var(--error);
+  max-width: 220px;
+  line-height: 1.2;
+}
+
+/* Inline waveform: 5 thin bars that scaleY with the current mic
+   volume. Pure CSS — no canvas, no per-bar SVG. The pulse animation
+   adds motion even when the volume is steady, and is suppressed
+   when prefers-reduced-motion is on. */
+.voice-waveform {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+}
+.voice-waveform__bar {
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--accent);
+  transform-origin: center;
+  transform: scaleY(var(--vw-scale, 0.2));
+  animation: vw-pulse 1s ease-in-out infinite;
+  animation-delay: var(--vw-delay, 0s);
+  will-change: transform;
+}
+@keyframes vw-pulse {
+  0%, 100% { opacity: 0.7; }
+  50%      { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-waveform__bar {
+    animation: none;
+  }
+  .chat__iconbtn--mic.is-rec {
+    animation: none;
+  }
+}
+
 .chat__imagewrap {
   margin: 4px 0 6px;
   display: flex;

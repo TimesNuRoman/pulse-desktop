@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import type { ChatMessage, ToolCall } from '../types';
 import { captureScreen, getAutostart, setAutostart, getSTTEngine } from '../api';
 import { ChatInput } from './ChatInput';
+import { VoiceButton } from './VoiceButton';
 import {
   getLLMConfig,
   getProviderName,
@@ -20,7 +21,6 @@ import {
   type ToolCallEvent,
 } from '../llm/tools';
 import type { ContentPart, LLMMessage } from '../llm/types';
-import type { STTEngine } from '../voice/stt';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { loadAttachment, type Attachment } from '../files/attachments';
 // R89: Smart Engine v3 low_confidence UI consumer.
@@ -127,6 +127,11 @@ export function ChatView() {
   const [screenshotBusy, setScreenshotBusy] = useState(false);
   const [autostart, setAutostartState] = useState<boolean | null>(null);
   const [llmError, setLlmError] = useState<string | null>(null);
+  // R188: voice recording is owned by the <VoiceButton> component; the
+  // chat view no longer manages the STT engine directly. `recording` is
+  // kept here so the input can switch to a "Recording…" placeholder
+  // when the button is held, but it is now driven by a ref callback
+  // (set by the button) rather than local state.
   const [recording, setRecording] = useState(false);
   const [sttAvailable, setSttAvailable] = useState(true);
   // R174: chat history state. `currentChatId` is stable across renames,
@@ -158,11 +163,6 @@ export function ChatView() {
   const abortRef = useRef<AbortController | null>(null);
   // Хранит «хвост» истории, который ушёл в LLM — чтобы stop корректно убирал streaming-флаг.
   const assistantIdRef = useRef<string | null>(null);
-  // STT-движок: ленивая инициализация (только при первом клике на микрофон)
-  const sttEngineRef = useRef<STTEngine | null>(null);
-  // Базовый текст в input на момент старта записи (чтобы не дублировать
-  // при partial+final, и не потерять то, что юзер уже напечатал до записи)
-  const voiceBaseRef = useRef<string>('');
   // Прикреплённый к чату файл (через 📎). Один одновременно — для MVP этого хватит.
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [attachBusy, setAttachBusy] = useState(false);
@@ -215,11 +215,6 @@ export function ChatView() {
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
-      // остановить STT, если шёл
-      const e = sttEngineRef.current;
-      if (e) {
-        void e.stop();
-      }
     };
   }, []);
 
@@ -692,95 +687,6 @@ export function ChatView() {
     }
   }
 
-  /**
-   * Инициализирует STT-движок лениво (при первом клике), подписывается на результаты.
-   * Возвращает engine, или null если STT недоступен.
-   */
-  function ensureSTTEngine(): STTEngine | null {
-    if (sttEngineRef.current) return sttEngineRef.current;
-    try {
-      const engine = getSTTEngine('ru-RU');
-      // подписка — одна на всё время жизни компонента
-      engine.onResult((event) => {
-        // Discriminated union: switch по event.type — TS сужает до STTErrorEvent,
-        // а в default остаётся STTPartial | STTFinal, где isFinal разводит дальше.
-        switch (event.type) {
-          case 'error': {
-            if (event.code === 'no-speech') {
-              // тихая отмена — UI не паникуем
-            } else if (event.code === 'not-allowed') {
-              setLlmError('Разрешите доступ к микрофону в настройках браузера/ОС.');
-            } else if (event.code === 'no-mic') {
-              setLlmError('Микрофон не найден. Проверьте, что устройство подключено.');
-            } else if (event.code === 'network') {
-              setLlmError('Нет сети для распознавания речи.');
-            } else if (event.code === 'aborted') {
-              // start() не успел / повторный — тихо
-            } else {
-              setLlmError(`Голосовой ввод: ${event.message}`);
-            }
-            setRecording(false);
-            return;
-          }
-          default: {
-            // STTPartial | STTFinal
-            if (event.isFinal) {
-              // Финальный результат — фиксируем текст в input, не отправляем.
-              // Юзер сам нажмёт Send.
-              const combined = voiceBaseRef.current
-                ? voiceBaseRef.current.replace(/\s+$/, '') + ' ' + event.text
-                : event.text;
-              setDraft(combined);
-              setRecording(false);
-            } else {
-              // partial — живой превью, НЕ дублируем (голосовой движок может
-              // слать finalBuf+interim, а потом final с finalBuf — перезаписываем
-              // «голосовую» часть от запомненного base)
-              const combined = voiceBaseRef.current
-                ? voiceBaseRef.current.replace(/\s+$/, '') + ' ' + event.text
-                : event.text;
-              setDraft(combined);
-            }
-            return;
-          }
-        }
-      });
-      sttEngineRef.current = engine;
-      return engine;
-    } catch {
-      setSttAvailable(false);
-      setLlmError('Голосовой ввод недоступен в этом окружении.');
-      return null;
-    }
-  }
-
-  async function onToggleMic() {
-    if (recording) {
-      // стоп записи — финал прилетит через onResult
-      const e = sttEngineRef.current;
-      if (e) {
-        await e.stop();
-      }
-      setRecording(false);
-      return;
-    }
-    const engine = ensureSTTEngine();
-    if (!engine) return;
-    setLlmError(null);
-    // Запоминаем «базу» — что было в input до записи.
-    // Partial/final будут дописываться к этой базе, не дублируясь.
-    voiceBaseRef.current = draft.trimEnd();
-    try {
-      await engine.start();
-      setRecording(true);
-      // фокус остаётся в input — юзер увидит partial там
-      inputRef.current?.focus();
-    } catch (e) {
-      setLlmError(`Микрофон: ${(e as Error).message}`);
-      setRecording(false);
-    }
-  }
-
   const cfg = getLLMConfig();
   const provider = getProviderName();
   const noKey = !cfg.hasKey;
@@ -1056,19 +962,11 @@ export function ChatView() {
             <button
               type="button"
               className={`chat__iconbtn chat__iconbtn--mic${recording ? ' is-rec' : ''}`}
-              title={
-                !sttAvailable
-                  ? 'Голосовой ввод недоступен'
-                  : recording
-                    ? 'Идёт запись… (клик — стоп)'
-                    : 'Голосовой ввод (mic → текст в поле)'
-              }
-              aria-label={recording ? 'Остановить запись' : 'Начать голосовой ввод'}
-              aria-pressed={recording}
-              onClick={() => void onToggleMic()}
-              disabled={!sttAvailable}
+              title="Голосовой ввод (R188 VoiceButton, не подключён в этой итерации)"
+              aria-label="Голосовой ввод (R188 VoiceButton, не подключён в этой итерации)"
+              disabled
             >
-              {recording ? '⏺' : '🎤'}
+              🎤
             </button>
           </>
         }
@@ -1116,6 +1014,120 @@ export function ChatView() {
           </>
         }
       />
+      <button
+          type="button"
+          className="chat__iconbtn"
+          title="Скриншот основного монитора"
+          onClick={() => void onCapture()}
+          disabled={screenshotBusy}
+        >
+          {screenshotBusy ? '…' : '📸'}
+        </button>
+        <button
+          type="button"
+          className="chat__iconbtn"
+          title={attachment ? `Прикреплён: ${attachment.info.name} (повторный клик — заменить)` : 'Прикрепить файл'}
+          onClick={() => void onAttach()}
+          disabled={attachBusy}
+        >
+          {attachBusy ? '…' : '📎'}
+        </button>
+        {/* Pulse v5.1 — vision quick action: скриншот + авто-отправка в vision-LLM.
+            Если vision недоступна — кнопка disabled, badge объясняет. */}
+        <button
+          type="button"
+          className="chat__iconbtn chat__iconbtn--vision"
+          title={
+            isVisionAvailable()
+              ? 'Снять скриншот и описать (vision-LLM)'
+              : 'Vision-модель не настроена (см. Settings)'
+          }
+          onClick={() => void onDescribe()}
+          disabled={screenshotBusy || busy || !isVisionAvailable()}
+        >
+          {screenshotBusy ? '…' : '👁️'}
+        </button>
+        <VoiceButton
+          onTranscript={(text) => {
+            // v1: insert placeholder text into the input. R189+ will
+            // swap the placeholder for a real Whisper.cpp transcription.
+            setDraft((d) => (d ? `${d} ${text}` : text));
+            inputRef.current?.focus();
+          }}
+          onRecordingChange={setRecording}
+          disabled={busy}
+        />
+        <input
+          ref={inputRef}
+          className="chat__input"
+          type="text"
+          inputMode="text"
+          enterKeyHint="send"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="sentences"
+          spellCheck={false}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={
+            recording
+              ? '🎙 Говорите…'
+              : noKey
+                ? 'API-ключ не задан…'
+                : attachment
+                  ? `Комментарий к ${attachment.info.name}…`
+                  : `Спросить Pulse (${provider}, ${cfg.model}${isVisionAvailable() ? ' · 🖼️ vision' : ''})…`
+          }
+          autoFocus={typeof window !== 'undefined' && window.innerWidth >= 768}
+          disabled={busy || recording}
+        />
+        {/* Vision badge: виден всегда, когда vision-модель сконфигурирована.
+            Показывает какая именно vision-модель сейчас активна (с учётом override). */}
+        {isVisionAvailable() && (
+          <span
+            className="chat__vision"
+            title={`Vision-модель: ${cfg.visionModel}`}
+            aria-label={`Vision-модель: ${cfg.visionModel}`}
+          >
+            <span className="chat__vision-dot" aria-hidden />
+            <span className="chat__vision-text">🖼️ vision</span>
+          </span>
+        )}
+        <button
+          type="button"
+          className="chat__iconbtn chat__iconbtn--autostart"
+          title={
+            autostart === null
+              ? 'Автозапуск…'
+              : autostart
+                ? 'Автозапуск вкл (клик — выкл)'
+                : 'Автозапуск выкл (клик — вкл)'
+          }
+          onClick={() => void onToggleAutostart()}
+          disabled={autostart === null}
+          data-on={autostart ? '1' : '0'}
+        >
+          ⚙
+        </button>
+        {busy ? (
+          <button
+            type="button"
+            className="chat__send chat__send--stop"
+            onClick={onStop}
+            title="Остановить генерацию"
+          >
+            ■
+          </button>
+        ) : (
+          <button
+            className="chat__send"
+            type="submit"
+            disabled={(!draft.trim() && !attachment) || noKey}
+            title="Отправить"
+          >
+            ➤
+          </button>
+        )}
       </form>
 
       {/* R89: routing override modal. Показывается по клику на chip'е
