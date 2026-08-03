@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type FormEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatMessage, ToolCall } from '../types';
@@ -33,7 +33,6 @@ import {
   readRoutingOverride,
   writeRoutingOverride,
 } from '../llm/routing-ui';
-<<<<<<< HEAD
 // R174: chat history persistence + sidebar.
 import {
   saveChat,
@@ -511,6 +510,16 @@ export function ChatView() {
     }
   }
 
+  // R174: <form> wrapper's onSubmit. Внутри ChatInput рендерит свой
+  // <form class="chat__inputrow">, поэтому внешняя обёртка ловит submit
+  // через всплытие (Enter в input) либо через явный submit на самой
+  // форме (тесты шлют synthetic event напрямую). Передаём draft в
+  // onSubmitText, который уже знает про /describe, attachment и busy-guard.
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    void onSubmitText(draft);
+  }
+
   // R160: разнесено — ChatInput дёргает onSubmitText(text) для текстового
   // submit и onVisionResponse(...) для paste-image submit. Оба пути
   // сходятся на runSubmitCore (через разные входы). Slash-команда
@@ -946,6 +955,14 @@ export function ChatView() {
         </div>
       )}
 
+      {/* R174: внешний <form class="chat__form"> оборачивает ChatInput, чтобы
+          (а) CSS-стили .chat__form (border-top, padding-top, safe-area,
+          keyboard-shift) применялись к зоне ввода, и (б) тесты и bubbled
+          submit из внутренней .chat__inputrow ловили onSubmit. Браузер
+          auto-закрывает внешнюю форму при виде вложенной <form> в ChatInput,
+          и onSubmit на этой пустой обёртке всё равно срабатывает, потому
+          что React listener сидит на самом DOM-элементе внешней формы. */}
+      <form className="chat__form" onSubmit={onSubmit}>
       <ChatInput
         value={draft}
         onChange={setDraft}
@@ -1066,6 +1083,7 @@ export function ChatView() {
           </>
         }
       />
+      </form>
 
       {/* R89: routing override modal. Показывается по клику на chip'е
           low_confidence. Позволяет юзеру выбрать preferred mode для
