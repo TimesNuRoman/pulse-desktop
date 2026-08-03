@@ -11,7 +11,8 @@
 //
 // MUST match the Rust regex in `src-tauri/src/license.rs::is_valid_key_format`.
 
-import type { LicenseTier, ValidateKeyResult } from './types';
+import type { License, LicenseTier, ValidateKeyResult } from './types';
+import { TRIAL_DURATION_MS } from './types';
 
 /** RFC 4648 base32 chunk: 4 chars from [A-Z 2-7], no 0/O/1/I/L lookalikes. */
 const BASE32_CHUNK = '[A-HJ-KM-NP-Z2-9]{4}';
@@ -104,4 +105,38 @@ export function groupKey(normalized: string): string[] {
   const chunks = tail.split('-');
   if (chunks.length !== 5) return [];
   return ['PULSE', ...chunks];
+}
+
+/** Number of whole days remaining in the trial (R191).
+ *
+ *  Pure: no I/O. Anchored on `license.trialStartedAt`. Returns:
+ *    * -1 if no trial has been started yet (`trialStartedAt === null`).
+ *      This is the "pre-trial" sentinel — distinct from 0, which means
+ *      "trial was started and is now exactly at the boundary".
+ *    *  0 if the trial has elapsed (`Date.now() - trialStartedAt >=
+ *      TRIAL_DURATION_MS`).
+ *    *  N (1..14) for days remaining. Rounded DOWN so "1 day 23h left"
+ *      still reads as "1 day left" — `formatTrialCountdown` pluralises
+ *      on this. */
+export function getTrialDaysRemaining(license: License, now: number = Date.now()): number {
+  if (license.trialStartedAt === null) return -1;
+  const elapsed = now - license.trialStartedAt;
+  if (elapsed >= TRIAL_DURATION_MS) return 0;
+  const msLeft = TRIAL_DURATION_MS - elapsed;
+  return Math.max(1, Math.ceil(msLeft / (24 * 60 * 60 * 1000)));
+}
+
+/** Format a day count for the trial badge / settings UI.
+ *
+ *  Returns:
+ *    * "N days left"     for N >= 2
+ *    * "1 day left"      for N === 1
+ *    * "Trial expired"   for N === 0
+ *    * "Trial not started" for negative input (defensive — callers
+ *      should branch on `license.trialStartedAt === null` first) */
+export function formatTrialCountdown(days: number): string {
+  if (days < 0) return 'Trial not started';
+  if (days === 0) return 'Trial expired';
+  if (days === 1) return '1 day left';
+  return `${days} days left`;
 }
