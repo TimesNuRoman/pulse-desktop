@@ -45,6 +45,10 @@ import {
 import { ChatSidebar } from './ChatSidebar';
 // R176: code block "Copy" button.
 import { renderChatCode } from './ChatCodeBlock';
+// R186: model switcher in chat header. Live hot-swap активной модели
+// (список берём из Ollama /api/tags). Не путать с Settings → "Your
+// hardware" (R175) — там рекомендации по железу, тут runtime-выбор.
+import { ModelSwitcher } from './ModelSwitcher';
 
 const SEED: ChatMessage = {
   id: 'seed-1',
@@ -182,6 +186,11 @@ export function ChatView() {
   // R89: последний выбранный override (из localStorage). Применяется как
   // suggested mode в modal — "Last time you picked QuickAnswer".
   const [lastOverride] = useState<RoutingMode | null>(() => readRoutingOverride());
+  // R186: активная модель для чата. Инициализируется из getLLMConfig()
+  // (env + localStorage override). ModelSwitcher в шапке чата зовёт
+  // setCurrentModel при выборе другой модели. Используется в runAgentLoop
+  // как modelOverride.
+  const [currentModel, setCurrentModel] = useState<string>(() => getLLMConfig().model);
 
   // Автоскролл к последнему сообщению
   useEffect(() => {
@@ -408,6 +417,10 @@ export function ChatView() {
       const result = await runAgentLoop({
         messages: [PULSE_SYSTEM_PROMPT_AGENT, ...toLLMMessages(history)],
         signal: controller.signal,
+        // R186: live hot-swap модели. Если юзер сменил модель через
+        // ModelSwitcher — этот раунд пойдёт в новую модель. История
+        // сохраняется (мы не очищаем messages), так что контекст остаётся.
+        model: currentModel,
         callbacks: {
           onTextDelta: (delta) => {
             setMessages((cur) =>
@@ -785,6 +798,26 @@ export function ChatView() {
         onToggle={() => setSidebarCollapsed((cur) => !cur)}
       />
       <div className="chat">
+      {/* R186: chat header. Model switcher слева — кликабельный dropdown
+          со списком установленных Ollama-моделей. Справа — vision-badge
+          (если vision-модель настроена). Header sticky внутри chat (см.
+          .chat__head в styles.css). */}
+      <div className="chat__head" data-testid="chat-head">
+        <ModelSwitcher
+          currentModel={currentModel}
+          onSwitch={setCurrentModel}
+        />
+        {isVisionAvailable() && (
+          <span
+            className="chat__vision chat__vision--header"
+            title={`Vision-модель: ${cfg.visionModel}`}
+            aria-label={`Vision-модель: ${cfg.visionModel}`}
+          >
+            <span className="chat__vision-dot" aria-hidden />
+            <span className="chat__vision-text">vision</span>
+          </span>
+        )}
+      </div>
       <div className="chat__list" ref={listRef}>
         {messages.map((m) => (
           <div

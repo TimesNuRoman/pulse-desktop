@@ -171,6 +171,14 @@ export interface AgentLoopOptions {
   signal?: AbortSignal;
   callbacks: AgentLoopCallbacks;
   maxSteps?: number;
+  /**
+   * R186: override модели для этого раунда. Передаётся в `streamChat`
+   * как `req.modelOverride` и используется вместо `cfg.model`/`cfg.visionModel`.
+   * Если не задан — выбор модели как раньше (vision для картинок, иначе text).
+   * ChatView хранит currentModel в state и пробрасывает сюда при каждом
+   * вызове — model switcher в шапке делает live hot-swap.
+   */
+  model?: string;
 }
 
 export interface AgentLoopResult {
@@ -195,7 +203,14 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
   let acc = '';
   try {
     const r = await streamChat(
-      { messages: opts.messages, signal: opts.signal },
+      {
+        messages: opts.messages,
+        signal: opts.signal,
+        // R186: pass-through override model из ChatView → streamChat.
+        // Если opts.model пустой/undefined — streamChat возьмёт модель
+        // из env/localStorage (поведение v5.1).
+        modelOverride: opts.model && opts.model.trim() ? opts.model : undefined,
+      },
       (delta) => {
         acc += delta;
         opts.callbacks.onTextDelta(delta);
