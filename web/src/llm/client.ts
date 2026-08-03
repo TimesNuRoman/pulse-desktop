@@ -16,6 +16,11 @@
 // (можно любую строку, по дефолту 'ollama'); для облачных провайдеров —
 // обязателен. Никаких ключей в коде.
 
+// R194: re-export agent v3.1 loop. Реальная логика живёт в `runAgentLoop.ts`,
+// здесь только публичный API-фасад. Не модифицируем существующий код —
+// конфликт-риск с unmerged-ветками (R186/R188/R176/R191).
+export { runAgentLoop } from './runAgentLoop';
+
 import type {
   ChatRequest,
   ContentPart,
