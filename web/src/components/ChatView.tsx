@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, FormEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatMessage, ToolCall } from '../types';
+import { renderCode } from './CodeBlock';
 import { captureScreen, getAutostart, setAutostart, getSTTEngine } from '../api';
 import {
   getLLMConfig,
@@ -680,7 +681,10 @@ export function ChatView() {
             )}
             {m.content && (
               <div className="chat__content">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{ code: renderCode }}
+                >
                   {m.content}
                 </ReactMarkdown>
                 {m.streaming && <span className="chat__cursor">▍</span>}

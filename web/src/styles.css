@@ -11,6 +11,12 @@
   --user-bubble: rgba(122, 162, 247, 0.16);
   --assistant-bubble: rgba(255, 255, 255, 0.04);
   --radius: 10px;
+  /* R168' — syntax highlight token colors. Tokyo Night defaults. */
+  --tok-purple: #bb9af7;
+  --tok-green: #9ece6a;
+  --tok-orange: #ff9e64;
+  --tok-blue: #7aa2f7;
+  --tok-comment: #565f89;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 14px;
   color: var(--fg);
@@ -278,6 +284,14 @@ a:hover { text-decoration: underline; }
 .chat__content pre code { background: transparent; padding: 0; }
 .chat__content ul, .chat__content ol { margin: 4px 0 4px 18px; padding: 0; }
 .chat__content em { color: var(--fg-dim); }
+
+/* R168' — code block syntax highlighting (Tokyo Night palette). */
+.chat__content .tok-kw  { color: var(--tok-purple); font-weight: 600; }
+.chat__content .tok-str { color: var(--tok-green); }
+.chat__content .tok-num { color: var(--tok-orange); }
+.chat__content .tok-com { color: var(--tok-comment); font-style: italic; }
+.chat__content .tok-fn  { color: var(--tok-blue); }
+.chat__content .tok-op  { color: var(--tok-comment); }
 
 .chat__form {
   display: flex;
