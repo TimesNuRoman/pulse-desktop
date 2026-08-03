@@ -32,6 +32,8 @@ import {
   readRoutingOverride,
   writeRoutingOverride,
 } from '../llm/routing-ui';
+// R176: code block "Copy" button.
+import { renderChatCode } from './ChatCodeBlock';
 
 const SEED: ChatMessage = {
   id: 'seed-1',
@@ -680,7 +682,10 @@ export function ChatView() {
             )}
             {m.content && (
               <div className="chat__content">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{ code: renderChatCode }}
+                >
                   {m.content}
                 </ReactMarkdown>
                 {m.streaming && <span className="chat__cursor">▍</span>}
