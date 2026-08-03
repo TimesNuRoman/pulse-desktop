@@ -286,6 +286,18 @@ a:hover { text-decoration: underline; }
   border-top: 1px solid var(--border);
   align-items: center;
 }
+/* R160: новый wrapper для <form> внутри ChatInput — та же лента, что и
+   старая chat__form, но без верхнего border (он уже у родителя-обёртки,
+   если есть) и без padding-top. До R160 chat__form был контейнером всего
+   ряда; теперь chat__form — это просто горизонтальный ряд иконок, а сам
+   <form> живёт в ChatInput как .chat__inputrow. */
+.chat__inputrow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
 .chat__input {
   flex: 1;
   background: var(--bg-elev);
@@ -366,6 +378,13 @@ a:hover { text-decoration: underline; }
   object-fit: contain;
   background: #000;
   cursor: zoom-in;
+}
+/* R160: pasted-image preview внутри chat__attach. Жёсткий лимит 80px
+   (по сравнению с 140px у in-chat screenshot). Узкий и неагрессивный —
+   превью должно намекать «я здесь», не занимая пол-экрана. */
+.chat__image--paste {
+  max-height: 80px;
+  cursor: default;
 }
 /* Развёрнутая картинка (toggle по клику). data-expanded="1" — без ограничения высоты. */
 .chat__image[data-expanded="1"] {
