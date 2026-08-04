@@ -290,6 +290,23 @@ export function ChatSidebar(props: ChatSidebarProps) {
                   />
                 ) : (
                   <>
+                    <span className="chatside__row-icon" aria-hidden>
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 14 14"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                      >
+                        <path
+                          d="M2 3.5C2 2.67 2.67 2 3.5 2h7c.83 0 1.5.67 1.5 1.5v5c0 .83-.67 1.5-1.5 1.5H6.5L4 12V10H3.5C2.67 10 2 9.33 2 8.5v-5z"
+                          stroke="currentColor"
+                          strokeWidth="1.2"
+                          strokeLinejoin="round"
+                          fill="none"
+                        />
+                      </svg>
+                    </span>
                     <div className="chatside__row-title">{truncate(c.title, TITLE_MAX)}</div>
                     <div className="chatside__row-meta">
                       <span className="chatside__row-time">

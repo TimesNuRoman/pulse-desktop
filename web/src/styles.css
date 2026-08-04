@@ -384,7 +384,7 @@ a:hover { text-decoration: underline; }
 
 .chat__iconbtn {
   background: var(--bg-elev);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-elevated);
   color: var(--fg-dim);
   width: 28px;
   height: 28px;
@@ -395,7 +395,8 @@ a:hover { text-decoration: underline; }
   font-size: 14px;
   line-height: 1;
   flex-shrink: 0;
-  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  box-shadow: var(--shadow-sm);
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .chat__iconbtn:hover { color: var(--fg); border-color: var(--accent); }
 .chat__iconbtn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -405,17 +406,31 @@ a:hover { text-decoration: underline; }
   background: var(--accent-soft);
 }
 
+/* R241: voice/mic button - heavy shadow + elevated border by
+ * default so the action affordance reads as "pressable" from
+ * across the panel. Recording state still wins (red + pulse)
+ * via .is-rec below. */
+.chat__iconbtn--mic {
+  background: var(--surface-3);
+  border-color: var(--border-elevated);
+  box-shadow: var(--shadow-md);
+}
+.chat__iconbtn--mic:hover {
+  box-shadow: var(--shadow-md), 0 0 0 1px var(--accent-soft);
+}
+
 /* mic button: red pulsing while recording */
 .chat__iconbtn--mic.is-rec {
   color: #fff;
   border-color: var(--error);
   background: var(--error);
+  box-shadow: var(--shadow-md);
   animation: mic-pulse 1.2s ease-in-out infinite;
 }
 .chat__iconbtn--mic:disabled { opacity: 0.35; cursor: not-allowed; }
 @keyframes mic-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(247, 118, 142, 0.55); }
-  50%      { box-shadow: 0 0 0 6px rgba(247, 118, 142, 0); }
+  0%, 100% { box-shadow: var(--shadow-md), 0 0 0 0 rgba(247, 118, 142, 0.55); }
+  50%      { box-shadow: var(--shadow-md), 0 0 0 6px rgba(247, 118, 142, 0); }
 }
 
 /* R188: voice button wrapper holds the mic button + (when recording)
@@ -2446,19 +2461,25 @@ a:hover { text-decoration: underline; }
   to { opacity: 1; }
 }
 
+/* R241: floating panel recipe - translucent surface-3, 20px
+ * blur + 160% saturate, elevated border, heavy layered shadow.
+ * The blur is what makes the panel feel "above" the chat, not
+ * pasted on top. */
 .chat__modal {
   width: 100%;
   max-width: 440px;
   max-height: 80vh;
   overflow-y: auto;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  background: var(--surface-overlay-translucent);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-elevated);
+  border-radius: 10px;
   padding: 16px 16px 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-xl);
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--fg);
@@ -2650,7 +2671,7 @@ a:hover { text-decoration: underline; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--fg-dim);
-  background: var(--bg-2);
+  background: var(--surface-3);
   border: 1px solid var(--border);
 }
 .pro-badge--active {
@@ -2686,14 +2707,16 @@ a:hover { text-decoration: underline; }
 .upgrade-modal__panel {
   position: relative;
   width: min(360px, calc(100vw - 24px));
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  background: var(--surface-overlay-translucent);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-elevated);
+  border-radius: 10px;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-xl);
 }
 .upgrade-modal__head {
   display: flex;
@@ -2758,8 +2781,8 @@ a:hover { text-decoration: underline; }
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  border: 1px solid var(--border);
-  background: var(--bg-2);
+  border: 1px solid var(--border-elevated);
+  background: var(--surface-3);
   color: var(--fg);
 }
 .upgrade-modal__btn--primary {
@@ -2875,7 +2898,7 @@ a:hover { text-decoration: underline; }
   text-transform: uppercase;
   padding: 2px 8px;
   border-radius: 4px;
-  background: var(--bg-2);
+  background: var(--surface-3);
   color: var(--fg-dim);
   border: 1px solid var(--border);
 }
@@ -2925,7 +2948,7 @@ a:hover { text-decoration: underline; }
   font-weight: 600;
   cursor: pointer;
   border: 1px solid var(--border);
-  background: var(--bg-2);
+  background: var(--surface-3);
   color: var(--fg);
 }
 .pro-settings__btn--primary {
@@ -2964,7 +2987,7 @@ a:hover { text-decoration: underline; }
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--bg-2);
+  background: var(--surface-3);
 }
 .pro-settings__feature-label {
   font-size: 11.5px;
@@ -3030,17 +3053,20 @@ a:hover { text-decoration: underline; }
   border-color: var(--accent);
 }
 
-/* --- R174: chat history sidebar --- */
+/* --- R174: chat history sidebar ---
+ * R241: surface-2 background, elevated border, layered shadow
+ * (heavier alpha 0.6+ for the dark surface model). */
 .chatside {
   width: 240px;
   min-width: 240px;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border);
-  background: var(--bg-elev);
+  border-right: 1px solid var(--border-elevated);
+  background: var(--surface-2);
   padding: 8px 6px 6px;
   gap: 6px;
   overflow: hidden;
+  box-shadow: var(--shadow-md);
 }
 .chatside--collapsed {
   width: 32px;
@@ -3110,7 +3136,7 @@ a:hover { text-decoration: underline; }
 }
 .chatside__search-input {
   flex: 1;
-  background: var(--bg);
+  background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 5px 8px;
@@ -3138,15 +3164,23 @@ a:hover { text-decoration: underline; }
   text-align: center;
   font-style: italic;
 }
+/* R241: list rows go horizontal - icon-left, title-mid (flex:1),
+ * meta-right. Tighter typography: title 13px medium, meta 11px
+ * regular muted. 8-10px vertical padding (was 7px). Touch target
+ * stays ≥44px high. Light border-bottom on the active row gives
+ * the list a clean "this is where you are" feel without an
+ * overpowering accent rectangle. */
 .chatside__row {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 7px 8px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
   border-radius: 6px;
   border: 1px solid transparent;
+  border-bottom-color: var(--border-subtle);
   cursor: pointer;
-  min-height: 56px;
+  min-height: 44px;
   user-select: none;
   outline: none;
 }
@@ -3159,23 +3193,42 @@ a:hover { text-decoration: underline; }
 .chatside__row.is-active {
   background: var(--accent-soft);
   border-color: rgba(122, 162, 247, 0.35);
+  border-bottom-color: var(--border-elevated);
+}
+.chatside__row-icon {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-dim);
+  opacity: 0.85;
+}
+.chatside__row.is-active .chatside__row-icon {
+  color: var(--accent);
+  opacity: 1;
 }
 .chatside__row-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--fg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.3;
+  flex: 1;
+  min-width: 0;
 }
 .chatside__row-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 6px;
-  font-size: 10.5px;
+  font-size: 11px;
+  font-weight: 400;
   color: var(--fg-dim);
+  flex-shrink: 0;
 }
 .chatside__row-time {
   flex-shrink: 0;
@@ -3206,14 +3259,16 @@ a:hover { text-decoration: underline; }
 .chatside__menu {
   position: fixed;
   z-index: 100;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
+  background: var(--surface-overlay-translucent);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-elevated);
   border-radius: 6px;
   padding: 3px;
   min-width: 140px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-md);
 }
 .chatside__menu-item {
   text-align: left;

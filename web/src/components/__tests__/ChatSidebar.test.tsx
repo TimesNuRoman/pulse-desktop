@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Tests for ChatSidebar (R174 multi-chat tabs).
+// Tests for ChatSidebar (R174 multi-chat tabs + R241 row layout).
 //
 // We use `createRoot` + `act` (same pattern as LicenseInput.test.tsx)
 // instead of @testing-library/svelte because the project is React and
@@ -87,6 +87,35 @@ describe('ChatSidebar — basic render', () => {
       '.chatside__list',
     );
     expect(nav?.getAttribute('role')).toBe('navigation');
+  });
+
+  test('R241: each row renders a leading icon, title and meta in that order', () => {
+    const row = harness.container.querySelector<HTMLDivElement>(
+      '[data-testid="chat-row"][data-chat-id="a"]',
+    )!;
+    const icon = row.querySelector<HTMLElement>('.chatside__row-icon');
+    const title = row.querySelector<HTMLElement>('.chatside__row-title');
+    const meta = row.querySelector<HTMLElement>('.chatside__row-meta');
+    expect(icon).not.toBeNull();
+    expect(title).not.toBeNull();
+    expect(meta).not.toBeNull();
+    // Order: icon must precede title in document order.
+    expect(
+      icon!.compareDocumentPosition(title!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    // Order: title must precede meta.
+    expect(
+      title!.compareDocumentPosition(meta!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  test('R241: the icon is decorative (aria-hidden) and contains an SVG', () => {
+    const row = harness.container.querySelector<HTMLDivElement>(
+      '[data-testid="chat-row"][data-chat-id="b"]',
+    )!;
+    const icon = row.querySelector<HTMLElement>('.chatside__row-icon')!;
+    expect(icon.getAttribute('aria-hidden')).not.toBeNull();
+    expect(icon.querySelector('svg')).not.toBeNull();
   });
 });
 
