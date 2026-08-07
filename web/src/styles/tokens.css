@@ -54,4 +54,53 @@
    * Compose by reading the four vars below together; we do not
    * use a CSS preprocessor. */
   --glass-blur: blur(20px) saturate(160%);
+
+  /* ─── R244: Spacing rhythm ───
+   * Replaces the old 8/16/24 ladder with 6/12/18/28/44. The values
+   * were chosen by measuring the row heights and component paddings
+   * in the existing chat sidebar (R241) — the smallest breathing
+   * gap is 6px, a tight inline gap is 12px, the default content
+   * gap is 18px, a section break is 28px, and a touch-target row
+   * is 44px. Using clamp() keeps it fluid between 320px and 1440px
+   * without breaking the visual cadence. */
+  --sp-1: clamp(5px, 0.45vw + 3.8px, 6px);     /* tight: inline icon gaps, chip inner */
+  --sp-2: clamp(10px, 0.6vw + 8.6px, 12px);    /* default: list padding, control height - 4 */
+  --sp-3: clamp(16px, 0.7vw + 14.4px, 18px);   /* breathing: row internal gap, section gutter */
+  --sp-4: clamp(24px, 0.9vw + 21.6px, 28px);   /* section: between unrelated blocks */
+  --sp-5: clamp(40px, 1.2vw + 36px, 44px);     /* touch: min-height on rows / buttons */
+
+  /* ─── R244: Motion tokens ───
+   * Calibrated for the 120ms micro-interaction budget. Keep
+   * easings consistent — only `ease-out` is used for UI micro-
+   * motions; we never apply `ease-in` (feels like the UI is
+   * "running away"). */
+  --dur-fast: 120ms;          /* hover, focus, chip state */
+  --dur-base: 200ms;          /* selected row gradient fade-in */
+  --dur-slow: 4s;             /* empty-state float (illustration drift) */
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
+
+  /* ─── R244: Selected row gradient ───
+   * The two-tone blue→purple highlight on a selected list row:
+   * 135deg wash with an inset 2px accent border. The icon itself
+   * picks up the same gradient via `background-clip: text` on the
+   * .chatside__row-icon. Layered shadow keeps the "this is where
+   * you are" feeling without a flat fill. */
+  --row-selected-bg: linear-gradient(
+    135deg,
+    rgba(122, 162, 247, 0.18) 0%,
+    rgba(187, 154, 247, 0.10) 100%
+  );
+  --row-selected-border: rgba(122, 162, 247, 0.40);
+  --row-icon-gradient: linear-gradient(135deg, #7aa2f7 0%, #bb9af7 100%);
+
+  /* ─── R244: Sidebar ambient wash ───
+   * A vertical hint at the top of the chat sidebar so the panel
+   * doesn't read as a flat slab. ~2% blue at the top, fading to
+   * transparent. Stays under the surface so it doesn't fight the
+   * row gradients. */
+  --sidebar-wash: linear-gradient(
+    180deg,
+    rgba(122, 162, 247, 0.04) 0%,
+    rgba(122, 162, 247, 0) 40%
+  );
 }

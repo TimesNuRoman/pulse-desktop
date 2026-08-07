@@ -117,6 +117,78 @@ describe('ChatSidebar — basic render', () => {
     expect(icon.getAttribute('aria-hidden')).not.toBeNull();
     expect(icon.querySelector('svg')).not.toBeNull();
   });
+
+  test('R244: each row renders a KeyboardHint chip with an aria-label', () => {
+    const rows = harness.container.querySelectorAll<HTMLDivElement>(
+      '[data-testid="chat-row"]',
+    );
+    for (const r of rows) {
+      const hint = r.querySelector<HTMLElement>('[data-testid="chatside-row-hint"]');
+      expect(hint).not.toBeNull();
+      // The aria-label is required by the component contract -
+      // a screen reader must hear the action, not just the symbol.
+      expect(hint!.getAttribute('aria-label')).toMatch(/открыть чат/);
+    }
+  });
+});
+
+describe('ChatSidebar — R244 empty states', () => {
+  test('zero chats renders the empty-state illustration with title and hint', () => {
+    const h = mount(
+      <ChatSidebar
+        chats={[]}
+        currentId={null}
+        isCollapsed={false}
+        onSelect={() => {}}
+        onNewChat={() => {}}
+        onDelete={() => {}}
+        onRename={() => {}}
+        onToggle={() => {}}
+      />,
+    );
+    const empty = h.container.querySelector<HTMLElement>(
+      '[data-testid="chatside-empty"]',
+    );
+    expect(empty).not.toBeNull();
+    expect(empty!.textContent).toMatch(/Нет сохранённых чатов/);
+    expect(empty!.textContent).toMatch(/Новый чат/);
+    // Illustration must be present (svg with the float class).
+    expect(empty!.querySelector('svg.empty-state__float')).not.toBeNull();
+    unmount(h);
+  });
+
+  test('no search hits renders the search empty-state with the query echoed', () => {
+    const h = mount(
+      <ChatSidebar
+        chats={CHATS}
+        currentId={null}
+        isCollapsed={false}
+        onSelect={() => {}}
+        onNewChat={() => {}}
+        onDelete={() => {}}
+        onRename={() => {}}
+        onToggle={() => {}}
+      />,
+    );
+    const input = h.container.querySelector<HTMLInputElement>(
+      '.chatside__search-input',
+    )!;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      setter!.call(input, 'zzz');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const empty = h.container.querySelector<HTMLElement>(
+      '[data-testid="chatside-empty-search"]',
+    );
+    expect(empty).not.toBeNull();
+    expect(empty!.textContent).toMatch(/Ничего не найдено/);
+    expect(empty!.textContent).toMatch(/zzz/);
+    unmount(h);
+  });
 });
 
 describe('ChatSidebar — interactions', () => {

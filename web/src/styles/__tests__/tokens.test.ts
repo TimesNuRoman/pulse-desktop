@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// Tests for R241 surface stack + shadow + border tokens.
+// Tests for R241 surface stack + shadow + border tokens,
+// plus the R244 spacing rhythm and motion tokens.
 //
 // We don't pull in a CSS parser - the project's `tokens.css` is
 // plain CSS that Vitest doesn't evaluate natively. Instead we
@@ -122,5 +123,67 @@ describe('tokens.css - file hygiene', () => {
     // The few common emoji we definitely don't want to leak.
     const src = tokensSource();
     expect(src).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2700}-\u{27BF}]/u);
+  });
+});
+
+describe('tokens.css - R244 spacing rhythm', () => {
+  test('defines all five spacing tokens --sp-1 through --sp-5', () => {
+    const src = tokensSource();
+    expect(src).toMatch(/--sp-1:\s*clamp\(/);
+    expect(src).toMatch(/--sp-2:\s*clamp\(/);
+    expect(src).toMatch(/--sp-3:\s*clamp\(/);
+    expect(src).toMatch(/--sp-4:\s*clamp\(/);
+    expect(src).toMatch(/--sp-5:\s*clamp\(/);
+  });
+
+  test('spacing tokens stay within the 6/12/18/28/44 design intent', () => {
+    // The clamp() midpoints should be close to the design intent
+    // values, never further than 2px off. This catches someone
+    // accidentally typing 26 instead of 28 in the formula.
+    const src = tokensSource();
+    const pairs: Array<[RegExp, number]> = [
+      [/--sp-1:\s*clamp\(\s*\d+px,\s*[^,]+,\s*(\d+)px\s*\)/, 6],
+      [/--sp-2:\s*clamp\(\s*\d+px,\s*[^,]+,\s*(\d+)px\s*\)/, 12],
+      [/--sp-3:\s*clamp\(\s*\d+px,\s*[^,]+,\s*(\d+)px\s*\)/, 18],
+      [/--sp-4:\s*clamp\(\s*\d+px,\s*[^,]+,\s*(\d+)px\s*\)/, 28],
+      [/--sp-5:\s*clamp\(\s*\d+px,\s*[^,]+,\s*(\d+)px\s*\)/, 44],
+    ];
+    for (const [re, expected] of pairs) {
+      const m = src.match(re);
+      expect(m).not.toBeNull();
+      const got = parseInt(m![1], 10);
+      expect(Math.abs(got - expected)).toBeLessThanOrEqual(2);
+    }
+  });
+});
+
+describe('tokens.css - R244 motion + selected row', () => {
+  test('defines dur-fast (120ms), dur-base (200ms), dur-slow (4s)', () => {
+    const src = tokensSource();
+    expect(src).toMatch(/--dur-fast:\s*120ms/);
+    expect(src).toMatch(/--dur-base:\s*200ms/);
+    expect(src).toMatch(/--dur-slow:\s*4s/);
+  });
+
+  test('defines row-selected-bg as a 135deg gradient (blue→purple)', () => {
+    const src = tokensSource();
+    const m = src.match(/--row-selected-bg:\s*([^;]+);/);
+    expect(m).not.toBeNull();
+    const v = m![1];
+    expect(v).toMatch(/linear-gradient\(/);
+    expect(v).toMatch(/135deg/);
+    // blue (122,162,247) and purple (187,154,247) stops
+    expect(v).toMatch(/rgba\(122,\s*162,\s*247/);
+    expect(v).toMatch(/rgba\(187,\s*154,\s*247/);
+  });
+
+  test('defines row-icon-gradient as blue→purple for background-clip:text', () => {
+    const src = tokensSource();
+    const m = src.match(/--row-icon-gradient:\s*([^;]+);/);
+    expect(m).not.toBeNull();
+    const v = m![1];
+    expect(v).toMatch(/#7aa2f7/);
+    expect(v).toMatch(/#bb9af7/);
+    expect(v).toMatch(/135deg/);
   });
 });

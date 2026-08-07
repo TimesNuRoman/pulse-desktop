@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Pulse — chat history sidebar (R174 multi-chat tabs).
+// R241: row layout, surface-2 background.
+// R244: KeyboardHint chip on each row, EmptyState illustration in
+// the empty branch.
 //
 // Dumb, controlled component. Reads nothing from localStorage itself —
 // the parent (ChatView) owns the data and persistence. Keeps the
@@ -11,13 +14,18 @@
 //     and last message preview)
 //   * Conversation list, sorted by `lastMessageAt` desc (parent
 //     pre-sorts)
-//   * Active row highlighted with `aria-current="page"`
+//   * Active row highlighted with `aria-current="page"` and a
+//     135deg blue→purple gradient (R244 polish)
 //   * Right-click context menu: Rename / Delete
 //   * Collapse toggle (Ctrl+B shortcut is wired in the parent — this
 //     component only emits `onToggle`)
+//   * R244 keyboard hint chip on each row, visible on hover/focus
+//   * R244 empty-state illustration when no chats / no search hits
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import type { ChatSummary } from '../lib/chatHistory';
+import { KeyboardHint } from './KeyboardHint';
+import { EmptyState } from './EmptyState';
 
 interface ChatSidebarProps {
   chats: ChatSummary[];
@@ -243,9 +251,23 @@ export function ChatSidebar(props: ChatSidebarProps) {
         aria-label="Сохранённые чаты"
       >
         {filtered.length === 0 ? (
-          <div className="chatside__empty">
-            {query ? 'Ничего не найдено' : 'Нет сохранённых чатов'}
-          </div>
+          query ? (
+            <div className="chatside__empty">
+              <EmptyState
+                title="Ничего не найдено"
+                hint={`По запросу «${query.trim()}» совпадений нет`}
+                testId="chatside-empty-search"
+              />
+            </div>
+          ) : (
+            <div className="chatside__empty">
+              <EmptyState
+                title="Нет сохранённых чатов"
+                hint="Нажмите «Новый чат», чтобы начать"
+                testId="chatside-empty"
+              />
+            </div>
+          )
         ) : (
           filtered.map((c) => {
             const isActive = c.id === currentId;
@@ -316,6 +338,12 @@ export function ChatSidebar(props: ChatSidebarProps) {
                         {c.messageCount}
                       </span>
                     </div>
+                    <KeyboardHint
+                      keys={['↵']}
+                      label="Open"
+                      ariaLabel="Нажмите Enter чтобы открыть чат"
+                      testId="chatside-row-hint"
+                    />
                   </>
                 )}
               </div>

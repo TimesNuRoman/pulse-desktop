@@ -37,6 +37,25 @@ body {
   overflow: hidden;
   /* выключаем выделение текста, чтобы клики по header не выделяли */
   user-select: none;
+  /* R244: 1px SVG noise overlay via a data-URI pseudo-element.
+   * The pattern is a tiny (40x40) random dot field encoded as
+   * an inline SVG. opacity:0.02 keeps it as a "felt" texture,
+   * not a visible grain. pointer-events:none so it never
+   * blocks a click. Fixed positioning pins it to the viewport
+   * even when the inner panels scroll. */
+  position: relative;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.02;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.5 0'/></filter><rect width='40' height='40' filter='url(%23n)'/></svg>");
+  background-repeat: repeat;
+  background-size: 40px 40px;
+  mix-blend-mode: overlay;
 }
 
 button {
@@ -3055,7 +3074,9 @@ a:hover { text-decoration: underline; }
 
 /* --- R174: chat history sidebar ---
  * R241: surface-2 background, elevated border, layered shadow
- * (heavier alpha 0.6+ for the dark surface model). */
+ * (heavier alpha 0.6+ for the dark surface model).
+ * R244: ambient vertical wash via a ::before pseudo so the
+ * panel doesn't read as a flat slab. */
 .chatside {
   width: 240px;
   min-width: 240px;
@@ -3067,7 +3088,21 @@ a:hover { text-decoration: underline; }
   gap: 6px;
   overflow: hidden;
   box-shadow: var(--shadow-md);
+  position: relative;
 }
+/* R244: ambient vertical wash at the top of the sidebar. Stays
+ * under the content (z-index -1) and only covers the top ~40%
+ * so it reads as "light from above", not a uniform tint. */
+.chatside::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 40%;
+  background: var(--sidebar-wash);
+  pointer-events: none;
+  z-index: 0;
+}
+.chatside > * { position: relative; z-index: 1; }
 .chatside--collapsed {
   width: 32px;
   min-width: 32px;
@@ -3169,7 +3204,10 @@ a:hover { text-decoration: underline; }
  * regular muted. 8-10px vertical padding (was 7px). Touch target
  * stays ≥44px high. Light border-bottom on the active row gives
  * the list a clean "this is where you are" feel without an
- * overpowering accent rectangle. */
+ * overpowering accent rectangle.
+ * R244: 120ms ease-out micro-interactions, scale 1.005 on hover,
+ * 0.998 on active. The active state now uses a 135deg blue→purple
+ * gradient + inset 2px accent border (replaces the flat fill). */
 .chatside__row {
   display: flex;
   flex-direction: row;
@@ -3183,17 +3221,41 @@ a:hover { text-decoration: underline; }
   min-height: 44px;
   user-select: none;
   outline: none;
+  /* R244: 120ms transition covers color, background, border and
+   * the scale micro-interaction. ease-out feels like the UI
+   * "settles" into the new state rather than snapping. */
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+  /* allow GPU compositing of transform without re-layout */
+  will-change: transform;
 }
 .chatside__row:hover {
   background: var(--bg-soft);
+  transform: scale(1.005);
 }
 .chatside__row:focus-visible {
   border-color: var(--accent);
+  outline: none;
 }
 .chatside__row.is-active {
-  background: var(--accent-soft);
-  border-color: rgba(122, 162, 247, 0.35);
+  /* R244: gradient wash + inset 2px accent border on the left
+   * edge. The 2px inset is drawn with box-shadow so the row's
+   * own border stays 1px (no layout shift on state change). */
+  background: var(--row-selected-bg);
+  border-color: var(--row-selected-border);
   border-bottom-color: var(--border-elevated);
+  box-shadow: inset 2px 0 0 0 var(--accent), var(--shadow-sm);
+  transform: scale(0.998);
+}
+/* R244: when the user is actively pressing, push the scale a
+ * hair further so the click feels "dented". Resets to the
+ * active state scale on release via the parent .is-active. */
+.chatside__row.is-active:active {
+  transform: scale(0.997);
 }
 .chatside__row-icon {
   flex-shrink: 0;
@@ -3204,9 +3266,18 @@ a:hover { text-decoration: underline; }
   justify-content: center;
   color: var(--fg-dim);
   opacity: 0.85;
+  transition: color var(--dur-fast) var(--ease-out);
 }
 .chatside__row.is-active .chatside__row-icon {
-  color: var(--accent);
+  /* R244: gradient text on the icon when its row is selected.
+   * background-clip:text paints the gradient through the
+   * letterforms / SVG paths. Webkit prefix is required for
+   * current Chromium. */
+  background: var(--row-icon-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
   opacity: 1;
 }
 .chatside__row-title {
@@ -3289,4 +3360,70 @@ a:hover { text-decoration: underline; }
 }
 .chatside__menu-item--danger:hover {
   background: rgba(247, 118, 142, 0.15);
+}
+
+/* ─── R244: visual polish ─────────────────────────────────────────
+ * The four visual signatures that the brief asked for, applied to
+ * the chat sidebar. None of these are required for the UI to work;
+ * they make the existing components feel less "AI-default". */
+
+/* 1. Keyboard hint chip (used inside .chatside__row). The chip
+ *    is rendered by <KeyboardHint /> with inline styles for the
+ *    surface-level rules, and this class hooks the .kbd-hint
+ *    root for the row-specific color shift on hover. */
+.kbd-hint {
+  /* hidden by default; the parent .chatside__row shows it on
+   * hover/focus so the list stays calm when idle. */
+  opacity: 0;
+  transform: translateX(2px);
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+.chatside__row:hover .kbd-hint,
+.chatside__row:focus-within .kbd-hint,
+.chatside__row.is-active .kbd-hint {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* 2-3. Row gradient + hover/active scale already live on
+ *    .chatside__row above. */
+
+/* 4. Empty-state illustration: 4s subtle float. translateY
+ *    -3px → 0 → -3px, ease-in-out so the turnaround feels
+ *    natural. Apply only via the .empty-state__float class
+ *    on the SVG so the rest of the empty-state markup is
+ *    unaffected. */
+@keyframes empty-state-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+.empty-state__float {
+  animation: empty-state-float var(--dur-slow) ease-in-out infinite;
+  will-change: transform;
+}
+
+/* 5. Spacing rhythm tokens live in tokens.css. The values are
+ *    already inlined by the TS components (KeyboardHint,
+ *    EmptyState) via spacing-tokens.ts. */
+
+/* 6. Visual texture: body::before noise overlay and sidebar
+ *    vertical wash live in the body / .chatside rules above. */
+
+/* R244: respect prefers-reduced-motion. The brief required it
+ * for the hover scale and the float. We keep the color / gradient
+ * transitions because they're not motion in the accessibility
+ * sense - the geometry stays still. */
+@media (prefers-reduced-motion: reduce) {
+  .empty-state__float { animation: none; }
+  .chatside__row,
+  .chatside__row:hover,
+  .chatside__row.is-active,
+  .chatside__row.is-active:active {
+    transform: none;
+  }
+  .kbd-hint,
+  .kbd-hint { transition: opacity var(--dur-fast) linear; }
 }
