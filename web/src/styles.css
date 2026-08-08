@@ -37,6 +37,25 @@ body {
   overflow: hidden;
   /* выключаем выделение текста, чтобы клики по header не выделяли */
   user-select: none;
+  /* R244: 1px SVG noise overlay via a data-URI pseudo-element.
+   * The pattern is a tiny (40x40) random dot field encoded as
+   * an inline SVG. opacity:0.02 keeps it as a "felt" texture,
+   * not a visible grain. pointer-events:none so it never
+   * blocks a click. Fixed positioning pins it to the viewport
+   * even when the inner panels scroll. */
+  position: relative;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.02;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.5 0'/></filter><rect width='40' height='40' filter='url(%23n)'/></svg>");
+  background-repeat: repeat;
+  background-size: 40px 40px;
+  mix-blend-mode: overlay;
 }
 
 button {
@@ -384,7 +403,7 @@ a:hover { text-decoration: underline; }
 
 .chat__iconbtn {
   background: var(--bg-elev);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-elevated);
   color: var(--fg-dim);
   width: 28px;
   height: 28px;
@@ -395,7 +414,8 @@ a:hover { text-decoration: underline; }
   font-size: 14px;
   line-height: 1;
   flex-shrink: 0;
-  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+  box-shadow: var(--shadow-sm);
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .chat__iconbtn:hover { color: var(--fg); border-color: var(--accent); }
 .chat__iconbtn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -405,17 +425,31 @@ a:hover { text-decoration: underline; }
   background: var(--accent-soft);
 }
 
+/* R241: voice/mic button - heavy shadow + elevated border by
+ * default so the action affordance reads as "pressable" from
+ * across the panel. Recording state still wins (red + pulse)
+ * via .is-rec below. */
+.chat__iconbtn--mic {
+  background: var(--surface-3);
+  border-color: var(--border-elevated);
+  box-shadow: var(--shadow-md);
+}
+.chat__iconbtn--mic:hover {
+  box-shadow: var(--shadow-md), 0 0 0 1px var(--accent-soft);
+}
+
 /* mic button: red pulsing while recording */
 .chat__iconbtn--mic.is-rec {
   color: #fff;
   border-color: var(--error);
   background: var(--error);
+  box-shadow: var(--shadow-md);
   animation: mic-pulse 1.2s ease-in-out infinite;
 }
 .chat__iconbtn--mic:disabled { opacity: 0.35; cursor: not-allowed; }
 @keyframes mic-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(247, 118, 142, 0.55); }
-  50%      { box-shadow: 0 0 0 6px rgba(247, 118, 142, 0); }
+  0%, 100% { box-shadow: var(--shadow-md), 0 0 0 0 rgba(247, 118, 142, 0.55); }
+  50%      { box-shadow: var(--shadow-md), 0 0 0 6px rgba(247, 118, 142, 0); }
 }
 
 /* R188: voice button wrapper holds the mic button + (when recording)
@@ -2446,19 +2480,25 @@ a:hover { text-decoration: underline; }
   to { opacity: 1; }
 }
 
+/* R241: floating panel recipe - translucent surface-3, 20px
+ * blur + 160% saturate, elevated border, heavy layered shadow.
+ * The blur is what makes the panel feel "above" the chat, not
+ * pasted on top. */
 .chat__modal {
   width: 100%;
   max-width: 440px;
   max-height: 80vh;
   overflow-y: auto;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  background: var(--surface-overlay-translucent);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-elevated);
+  border-radius: 10px;
   padding: 16px 16px 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-xl);
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--fg);
@@ -2650,7 +2690,7 @@ a:hover { text-decoration: underline; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--fg-dim);
-  background: var(--bg-2);
+  background: var(--surface-3);
   border: 1px solid var(--border);
 }
 .pro-badge--active {
@@ -2686,14 +2726,16 @@ a:hover { text-decoration: underline; }
 .upgrade-modal__panel {
   position: relative;
   width: min(360px, calc(100vw - 24px));
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  background: var(--surface-overlay-translucent);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-elevated);
+  border-radius: 10px;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-xl);
 }
 .upgrade-modal__head {
   display: flex;
@@ -2758,8 +2800,8 @@ a:hover { text-decoration: underline; }
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  border: 1px solid var(--border);
-  background: var(--bg-2);
+  border: 1px solid var(--border-elevated);
+  background: var(--surface-3);
   color: var(--fg);
 }
 .upgrade-modal__btn--primary {
@@ -2875,7 +2917,7 @@ a:hover { text-decoration: underline; }
   text-transform: uppercase;
   padding: 2px 8px;
   border-radius: 4px;
-  background: var(--bg-2);
+  background: var(--surface-3);
   color: var(--fg-dim);
   border: 1px solid var(--border);
 }
@@ -2925,7 +2967,7 @@ a:hover { text-decoration: underline; }
   font-weight: 600;
   cursor: pointer;
   border: 1px solid var(--border);
-  background: var(--bg-2);
+  background: var(--surface-3);
   color: var(--fg);
 }
 .pro-settings__btn--primary {
@@ -2964,7 +3006,7 @@ a:hover { text-decoration: underline; }
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--bg-2);
+  background: var(--surface-3);
 }
 .pro-settings__feature-label {
   font-size: 11.5px;
@@ -3030,18 +3072,37 @@ a:hover { text-decoration: underline; }
   border-color: var(--accent);
 }
 
-/* --- R174: chat history sidebar --- */
+/* --- R174: chat history sidebar ---
+ * R241: surface-2 background, elevated border, layered shadow
+ * (heavier alpha 0.6+ for the dark surface model).
+ * R244: ambient vertical wash via a ::before pseudo so the
+ * panel doesn't read as a flat slab. */
 .chatside {
   width: 240px;
   min-width: 240px;
   display: flex;
   flex-direction: column;
-  border-right: 1px solid var(--border);
-  background: var(--bg-elev);
+  border-right: 1px solid var(--border-elevated);
+  background: var(--surface-2);
   padding: 8px 6px 6px;
   gap: 6px;
   overflow: hidden;
+  box-shadow: var(--shadow-md);
+  position: relative;
 }
+/* R244: ambient vertical wash at the top of the sidebar. Stays
+ * under the content (z-index -1) and only covers the top ~40%
+ * so it reads as "light from above", not a uniform tint. */
+.chatside::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 40%;
+  background: var(--sidebar-wash);
+  pointer-events: none;
+  z-index: 0;
+}
+.chatside > * { position: relative; z-index: 1; }
 .chatside--collapsed {
   width: 32px;
   min-width: 32px;
@@ -3110,7 +3171,7 @@ a:hover { text-decoration: underline; }
 }
 .chatside__search-input {
   flex: 1;
-  background: var(--bg);
+  background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 5px 8px;
@@ -3138,44 +3199,107 @@ a:hover { text-decoration: underline; }
   text-align: center;
   font-style: italic;
 }
+/* R241: list rows go horizontal - icon-left, title-mid (flex:1),
+ * meta-right. Tighter typography: title 13px medium, meta 11px
+ * regular muted. 8-10px vertical padding (was 7px). Touch target
+ * stays ≥44px high. Light border-bottom on the active row gives
+ * the list a clean "this is where you are" feel without an
+ * overpowering accent rectangle.
+ * R244: 120ms ease-out micro-interactions, scale 1.005 on hover,
+ * 0.998 on active. The active state now uses a 135deg blue→purple
+ * gradient + inset 2px accent border (replaces the flat fill). */
 .chatside__row {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 7px 8px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
   border-radius: 6px;
   border: 1px solid transparent;
+  border-bottom-color: var(--border-subtle);
   cursor: pointer;
-  min-height: 56px;
+  min-height: 44px;
   user-select: none;
   outline: none;
+  /* R244: 120ms transition covers color, background, border and
+   * the scale micro-interaction. ease-out feels like the UI
+   * "settles" into the new state rather than snapping. */
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+  /* allow GPU compositing of transform without re-layout */
+  will-change: transform;
 }
 .chatside__row:hover {
   background: var(--bg-soft);
+  transform: scale(1.005);
 }
 .chatside__row:focus-visible {
   border-color: var(--accent);
+  outline: none;
 }
 .chatside__row.is-active {
-  background: var(--accent-soft);
-  border-color: rgba(122, 162, 247, 0.35);
+  /* R244: gradient wash + inset 2px accent border on the left
+   * edge. The 2px inset is drawn with box-shadow so the row's
+   * own border stays 1px (no layout shift on state change). */
+  background: var(--row-selected-bg);
+  border-color: var(--row-selected-border);
+  border-bottom-color: var(--border-elevated);
+  box-shadow: inset 2px 0 0 0 var(--accent), var(--shadow-sm);
+  transform: scale(0.998);
+}
+/* R244: when the user is actively pressing, push the scale a
+ * hair further so the click feels "dented". Resets to the
+ * active state scale on release via the parent .is-active. */
+.chatside__row.is-active:active {
+  transform: scale(0.997);
+}
+.chatside__row-icon {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-dim);
+  opacity: 0.85;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.chatside__row.is-active .chatside__row-icon {
+  /* R244: gradient text on the icon when its row is selected.
+   * background-clip:text paints the gradient through the
+   * letterforms / SVG paths. Webkit prefix is required for
+   * current Chromium. */
+  background: var(--row-icon-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  opacity: 1;
 }
 .chatside__row-title {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--fg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.3;
+  flex: 1;
+  min-width: 0;
 }
 .chatside__row-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 6px;
-  font-size: 10.5px;
+  font-size: 11px;
+  font-weight: 400;
   color: var(--fg-dim);
+  flex-shrink: 0;
 }
 .chatside__row-time {
   flex-shrink: 0;
@@ -3206,14 +3330,16 @@ a:hover { text-decoration: underline; }
 .chatside__menu {
   position: fixed;
   z-index: 100;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
+  background: var(--surface-overlay-translucent);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border-elevated);
   border-radius: 6px;
   padding: 3px;
   min-width: 140px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-md);
 }
 .chatside__menu-item {
   text-align: left;
@@ -3234,4 +3360,506 @@ a:hover { text-decoration: underline; }
 }
 .chatside__menu-item--danger:hover {
   background: rgba(247, 118, 142, 0.15);
+}
+
+/* ─── R244: visual polish ─────────────────────────────────────────
+ * The four visual signatures that the brief asked for, applied to
+ * the chat sidebar. None of these are required for the UI to work;
+ * they make the existing components feel less "AI-default". */
+
+/* 1. Keyboard hint chip (used inside .chatside__row). The chip
+ *    is rendered by <KeyboardHint /> with inline styles for the
+ *    surface-level rules, and this class hooks the .kbd-hint
+ *    root for the row-specific color shift on hover. */
+.kbd-hint {
+  /* hidden by default; the parent .chatside__row shows it on
+   * hover/focus so the list stays calm when idle. */
+  opacity: 0;
+  transform: translateX(2px);
+  transition:
+    opacity var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+.chatside__row:hover .kbd-hint,
+.chatside__row:focus-within .kbd-hint,
+.chatside__row.is-active .kbd-hint {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* 2-3. Row gradient + hover/active scale already live on
+ *    .chatside__row above. */
+
+/* 4. Empty-state illustration: 4s subtle float. translateY
+ *    -3px → 0 → -3px, ease-in-out so the turnaround feels
+ *    natural. Apply only via the .empty-state__float class
+ *    on the SVG so the rest of the empty-state markup is
+ *    unaffected. */
+@keyframes empty-state-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+.empty-state__float {
+  animation: empty-state-float var(--dur-slow) ease-in-out infinite;
+  will-change: transform;
+}
+
+/* 5. Spacing rhythm tokens live in tokens.css. The values are
+ *    already inlined by the TS components (KeyboardHint,
+ *    EmptyState) via spacing-tokens.ts. */
+
+/* 6. Visual texture: body::before noise overlay and sidebar
+ *    vertical wash live in the body / .chatside rules above. */
+
+/* R244: respect prefers-reduced-motion. The brief required it
+ * for the hover scale and the float. We keep the color / gradient
+ * transitions because they're not motion in the accessibility
+ * sense - the geometry stays still. */
+@media (prefers-reduced-motion: reduce) {
+  .empty-state__float { animation: none; }
+  .chatside__row,
+  .chatside__row:hover,
+  .chatside__row.is-active,
+  .chatside__row.is-active:active {
+    transform: none;
+  }
+  .kbd-hint,
+  .kbd-hint { transition: opacity var(--dur-fast) linear; }
+}
+
+/* --- R248: Raycast-pattern chat layout ---
+ * Single column. Topbar (logo / model / history) + routing mode
+ * pills + full-width messages + composer. The history popover
+ * anchors to the top-right [History] button.
+ *
+ * The .chat-layout flex row that previously held the sidebar is
+ * gone — the parent <main class="app__main"> already gives us a
+ * flex column to fill. */
+.raycast-chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  position: relative;
+  padding: 8px 10px 10px;
+  gap: 8px;
+}
+
+/* R248: topbar — 56px tall (R244 a11y floor). Logo on the left,
+ * model switcher in the center, [☰ History] on the right. The
+ * topbar is NOT draggable (the App.tsx app__header carries the
+ * Tauri drag region for the OS window). */
+.raycast-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 56px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow-sm);
+}
+.raycast-topbar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 4px;
+  min-height: 32px;
+}
+.raycast-topbar__brand-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px rgba(122, 162, 247, 0.6);
+}
+.raycast-topbar__brand-text {
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  color: var(--fg);
+}
+.raycast-topbar__model {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.raycast-topbar__vision {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  white-space: nowrap;
+}
+.raycast-topbar__vision-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tok-green);
+}
+.raycast-topbar__history {
+  min-height: 56px;
+  min-width: 56px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-elevated);
+  background: var(--surface-1);
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.raycast-topbar__history:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.raycast-topbar__history[aria-expanded="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.raycast-topbar__history:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* R248: routing mode pills — a horizontal tablist of 6 chips.
+ * The active pill (matches lastOverride) is filled with the
+ * accent tint; the rest are transparent w/ a 1px border. All
+ * six are 56dp tall (R244 a11y floor). */
+.raycast-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 4px;
+}
+.raycast-pill {
+  min-height: 56px;
+  min-width: 56px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid var(--border-elevated);
+  background: transparent;
+  color: var(--fg-dim);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.raycast-pill:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.raycast-pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.raycast-pill[aria-pressed="true"],
+.raycast-pill.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* R248: chat messages — full width with a max-width cap so very
+ * wide viewports don't stretch the bubble readability. List is
+ * the same .chat__list behavior as before (flex 1, scroll). */
+.raycast-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 4px 2px 4px 2px;
+  /* Wide-screen cap: the bubble max-width is already 92%, but
+   * this is the container ceiling. 760px ≈ comfortable reading
+   * column. Below 760 the bubbles go full-width. */
+  margin: 0 auto;
+  width: 100%;
+  max-width: 760px;
+}
+
+/* R248: composer — bottom-anchored, full width, max 760px cap
+ * (matches the messages column). */
+.raycast-composer {
+  margin: 0 auto;
+  width: 100%;
+  max-width: 760px;
+}
+.raycast-composer__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0 4px;
+  border-top: 1px solid var(--border);
+}
+
+/* R248: history popover — anchored to the top-right corner of
+ * the chat surface, NOT to the button. Anchoring to the button
+ * inside a flex column is fragile (button moves with content),
+ * so we just place the popover at top-right and let the parent
+ * .raycast-chat's `position: relative` do the work. The popover
+ * itself owns its overflow / keyboard contract (see
+ * HistoryPopover.tsx). */
+.raycast-history {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 320px;
+  max-width: calc(100vw - 20px);
+  z-index: 20;
+  animation: raycast-history-in var(--dur-fast) var(--ease-out);
+}
+@keyframes raycast-history-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.history-popover {
+  background: var(--surface-2);
+  border: 1px solid var(--border-elevated);
+  border-radius: 10px;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  max-height: 480px;
+  overflow: hidden;
+}
+.history-popover__head {
+  padding: 8px 8px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.history-popover__new {
+  width: 100%;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.history-popover__new:hover {
+  background: rgba(122, 162, 247, 0.28);
+}
+.history-popover__new-plus {
+  font-size: 14px;
+  line-height: 1;
+}
+.history-popover__new-label {
+  flex: 1;
+}
+.history-popover__search {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.history-popover__search-input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--fg);
+  font-size: 12px;
+  font-family: inherit;
+}
+.history-popover__search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.history-popover__list {
+  margin: 0;
+  padding: 4px 4px 6px;
+  list-style: none;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.history-popover__list:focus {
+  outline: none;
+}
+.history-popover__empty {
+  padding: 12px 8px 16px;
+}
+.history-popover__row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  grid-template-areas: "title time count" "actions actions actions";
+  gap: 2px 8px;
+  align-items: center;
+  min-height: 56px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+.history-popover__row + .history-popover__row {
+  margin-top: 2px;
+}
+.history-popover__row:hover,
+.history-popover__row.is-focused {
+  background: var(--accent-soft);
+}
+.history-popover__row.is-active {
+  /* R244 row gradient on the active row, reused from sidebar. */
+  background:
+    linear-gradient(135deg, rgba(122, 162, 247, 0.22) 0%, rgba(187, 154, 247, 0.18) 100%);
+  border-color: rgba(122, 162, 247, 0.4);
+}
+.history-popover__row-title {
+  grid-area: title;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-popover__row.is-active .history-popover__row-title {
+  color: var(--accent);
+}
+.history-popover__row-meta {
+  grid-area: time;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+.history-popover__row-time { color: var(--fg-dim); }
+.history-popover__row-count {
+  grid-area: count;
+  min-width: 20px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--fg-dim);
+  font-size: 10px;
+  text-align: center;
+}
+.history-popover__row.is-active .history-popover__row-count {
+  background: rgba(122, 162, 247, 0.18);
+  color: var(--accent);
+}
+.history-popover__row-actions {
+  grid-area: actions;
+  display: inline-flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.history-popover__row:hover .history-popover__row-actions,
+.history-popover__row.is-focused .history-popover__row-actions,
+.history-popover__row.is-active .history-popover__row-actions {
+  opacity: 1;
+}
+.history-popover__row-btn {
+  min-height: 28px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-elevated);
+  background: var(--surface-1);
+  color: var(--fg-dim);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.history-popover__row-btn:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+.history-popover__row-btn--danger:hover {
+  color: var(--error);
+  border-color: var(--error);
+  background: rgba(247, 118, 142, 0.12);
+}
+.history-popover__rename {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 8px;
+  border-radius: 4px;
+  border: 1px solid var(--accent);
+  background: var(--surface-1);
+  color: var(--fg);
+  font-size: 12.5px;
+  font-family: inherit;
+}
+.history-popover__rename:focus {
+  outline: none;
+}
+
+/* R248: narrow viewports — pills wrap, popover stretches. */
+@media (max-width: 639px) {
+  .raycast-topbar {
+    min-height: 48px;
+    gap: 6px;
+  }
+  .raycast-topbar__brand-text {
+    /* Keep the wordmark; the icon-dot alone is not enough signal. */
+    display: none;
+  }
+  .raycast-topbar__history {
+    min-width: 48px;
+    padding: 0 8px;
+  }
+  .raycast-pill {
+    min-height: 48px;
+    padding: 0 10px;
+    font-size: 11.5px;
+  }
+  .raycast-history {
+    right: 4px;
+    width: calc(100vw - 8px);
+  }
+  .history-popover {
+    max-height: 60vh;
+  }
+}
+
+/* R248: respect reduced-motion for the popover entrance. */
+@media (prefers-reduced-motion: reduce) {
+  .raycast-history { animation: none; }
+  .history-popover__row { transition: none; }
+  .history-popover__row-actions { transition: none; }
+  .raycast-pill { transition: none; }
+  .raycast-topbar__history { transition: none; }
 }

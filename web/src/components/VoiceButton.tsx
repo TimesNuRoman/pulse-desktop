@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // R188: Voice input button (port of pulse-android R172).
+// R241: Visual lift via tokens.css - the .chat__iconbtn--mic
+// class now gets `background: var(--surface-3)`, an elevated
+// border and a heavy layered shadow. The recording pulse
+// animation continues to win while recording.
 //
 // Click to start recording, click again to stop. While recording the
 // button turns red and a small inline waveform + duration counter
