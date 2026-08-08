@@ -1,3 +1,25 @@
+// SPDX-License-Identifier: Apache-2.0
+// Pulse - R248 Raycast-pattern chat view.
+//
+// R248 replaces R174's persistent left sidebar with a transient
+// history popover triggered by a [☰ History] button. The chat
+// surface is a single full-width column:
+//
+//   ┌───────────────────────────────────────────────┐
+//   │ Pulse   [ModelSwitcher]            [☰ History]│  topbar
+//   │ [Авто] [План] [Ask] [Тесты] [Препью] [Код]     │  routing pills
+//   │                                                │
+//   │ (chat messages — full-width, max 760px)        │
+//   │                                                │
+//   │ composer (ChatInput)                           │
+//   └───────────────────────────────────────────────┘
+//
+// The popover lives in HistoryPopover.tsx; this file owns the
+// state, the LLM loop, and the layout. All the heavy logic from
+// R89 / R160 / R174 / R176 / R186 / R188 / R194 stays the
+// same: routing override modal, low_confidence chip, paste-image,
+// voice button, agent loop, debounced save, code-block copy.
+
 import { useState, useRef, useEffect, type FormEvent } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -5,6 +27,7 @@ import type { ChatMessage, ToolCall } from '../types';
 import { captureScreen, getAutostart, setAutostart, getSTTEngine } from '../api';
 import { ChatInput } from './ChatInput';
 import { VoiceButton } from './VoiceButton';
+import { HistoryPopover } from './HistoryPopover';
 import {
   getLLMConfig,
   getProviderName,
@@ -33,7 +56,7 @@ import {
   readRoutingOverride,
   writeRoutingOverride,
 } from '../llm/routing-ui';
-// R174: chat history persistence + sidebar.
+// R174: chat history persistence + popover.
 import {
   saveChat,
   loadAllChats,
@@ -42,7 +65,6 @@ import {
   renameChat,
   type ChatSummary,
 } from '../lib/chatHistory';
-import { ChatSidebar } from './ChatSidebar';
 // R176: code block "Copy" button.
 import { renderChatCode } from './ChatCodeBlock';
 // R186: model switcher in chat header. Live hot-swap активной модели
@@ -59,6 +81,20 @@ const SEED: ChatMessage = {
     'Подробности — в README.',
   ts: Date.now() - 60_000,
 };
+
+// R248: routing mode pills in the topbar. Six affordances; "Авто"
+// means no override (write null), the other five map onto the
+// RoutingMode enum from llm/route.ts. Labels are kept in the
+// chat surface (existing Russian UI) — no i18n drift on this
+// micro-feature.
+const ROUTING_PILLS: { mode: RoutingMode | null; label: string; aria: string }[] = [
+  { mode: null, label: 'Авто', aria: 'Авто-роутинг (без override)' },
+  { mode: 'QuickAnswer', label: 'Ask', aria: 'Quick Answer — короткий ответ' },
+  { mode: 'Reasoning', label: 'План', aria: 'Reasoning — аналитика / планирование' },
+  { mode: 'CodeEdit', label: 'Код', aria: 'CodeEdit — генерация / рефактор кода' },
+  { mode: 'Vision', label: 'Препью', aria: 'Vision — описание изображений' },
+  { mode: 'Default', label: 'Тесты', aria: 'Default — общий фоллбэк' },
+];
 
 function genId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -139,7 +175,8 @@ export function ChatView() {
   // Initial value picked on first render via lazy init.
   const [currentChatId, setCurrentChatId] = useState<string>(() => genId());
   const [chatTitle, setChatTitle] = useState<string>('Новый чат');
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  // R248: history is a popover, not a sidebar. State is just an open flag.
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [chats, setChats] = useState<ChatSummary[]>([]);
   // Refs that mirror state so debounced save uses the latest values
   // (avoids stale-closure issues inside setTimeout callbacks).
@@ -163,6 +200,9 @@ export function ChatView() {
   const abortRef = useRef<AbortController | null>(null);
   // Хранит «хвост» истории, который ушёл в LLM — чтобы stop корректно убирал streaming-флаг.
   const assistantIdRef = useRef<string | null>(null);
+  // R248: refs for click-outside close on the history popover.
+  const historyBtnRef = useRef<HTMLButtonElement | null>(null);
+  const historyPanelRef = useRef<HTMLDivElement | null>(null);
   // Прикреплённый к чату файл (через 📎). Один одновременно — для MVP этого хватит.
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [attachBusy, setAttachBusy] = useState(false);
@@ -277,19 +317,39 @@ export function ChatView() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, []);
 
-  // R174: Ctrl+B toggles the sidebar (Telegram-style).
+  // R248: click-outside + Escape closes the history popover. We listen
+  // on document (not the panel) so the panel itself can be the target
+  // of a click without triggering its own close.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
-        e.preventDefault();
-        setSidebarCollapsed((cur) => !cur);
+    if (!historyOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (
+        historyPanelRef.current?.contains(t) ||
+        historyBtnRef.current?.contains(t)
+      ) {
+        return;
       }
+      setHistoryOpen(false);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setHistoryOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [historyOpen]);
 
-  // R174: handlers wired to the sidebar.
+  // R248: when the popover opens, refresh the list so freshly-saved
+  // chats show up immediately.
+  useEffect(() => {
+    if (historyOpen) setChats(loadAllChats());
+  }, [historyOpen]);
+
+  // R174: handlers wired to the popover.
   function onNewChat() {
     // Persist the current conversation first (if it has any user content).
     const hasUser = messagesRef.current.some((m) => m.role === 'user');
@@ -301,10 +361,14 @@ export function ChatView() {
     setChatTitle('Новый чат');
     setMessages([SEED]);
     setChats(loadAllChats());
+    setHistoryOpen(false); // R248: popover closes after a new chat starts
   }
 
   function onSelectChat(id: string) {
-    if (id === currentChatId) return;
+    if (id === currentChatId) {
+      setHistoryOpen(false);
+      return;
+    }
     // Persist current before switching.
     const hasUser = messagesRef.current.some((m) => m.role === 'user');
     if (hasUser) {
@@ -317,6 +381,7 @@ export function ChatView() {
     setChatTitle(summary?.title || 'Чат');
     setMessages(loaded);
     setChats(loadAllChats());
+    setHistoryOpen(false); // R248: popover closes on pick
   }
 
   function onDeleteChat(id: string) {
@@ -687,44 +752,101 @@ export function ChatView() {
     }
   }
 
+  // R248: pill click writes the new override (or clears it for "Авто").
+  function onPickPill(mode: RoutingMode | null) {
+    writeRoutingOverride(mode);
+  }
+
   const cfg = getLLMConfig();
   const provider = getProviderName();
   const noKey = !cfg.hasKey;
+  // R248: which pill is "active" right now?
+  const activePill: RoutingMode | null = lastOverride; // lastOverride seeded from LS once; treat the initial pick as binding for the rest of the session
 
   return (
-    <div className="chat-layout">
-      <ChatSidebar
-        chats={chats}
-        currentId={currentChatId}
-        isCollapsed={sidebarCollapsed}
-        onSelect={onSelectChat}
-        onNewChat={onNewChat}
-        onDelete={onDeleteChat}
-        onRename={onRenameChat}
-        onToggle={() => setSidebarCollapsed((cur) => !cur)}
-      />
-      <div className="chat">
-      {/* R186: chat header. Model switcher слева — кликабельный dropdown
-          со списком установленных Ollama-моделей. Справа — vision-badge
-          (если vision-модель настроена). Header sticky внутри chat (см.
-          .chat__head в styles.css). */}
-      <div className="chat__head" data-testid="chat-head">
-        <ModelSwitcher
-          currentModel={currentModel}
-          onSwitch={setCurrentModel}
-        />
-        {isVisionAvailable() && (
-          <span
-            className="chat__vision chat__vision--header"
-            title={`Vision-модель: ${cfg.visionModel}`}
-            aria-label={`Vision-модель: ${cfg.visionModel}`}
+    <div className="raycast-chat">
+      {/* R248: topbar. Logo + model switcher + history button. */}
+      <header className="raycast-topbar" data-testid="raycast-topbar">
+        <div className="raycast-topbar__brand" data-testid="raycast-brand">
+          <span className="raycast-topbar__brand-dot" aria-hidden />
+          <span className="raycast-topbar__brand-text">Pulse</span>
+        </div>
+        <div className="raycast-topbar__model">
+          <ModelSwitcher
+            currentModel={currentModel}
+            onSwitch={setCurrentModel}
+          />
+          {isVisionAvailable() && (
+            <span
+              className="raycast-topbar__vision"
+              title={`Vision-модель: ${cfg.visionModel}`}
+              aria-label={`Vision-модель: ${cfg.visionModel}`}
+            >
+              <span className="raycast-topbar__vision-dot" aria-hidden />
+              vision
+            </span>
+          )}
+        </div>
+        <button
+          ref={historyBtnRef}
+          type="button"
+          className="raycast-topbar__history"
+          onClick={() => setHistoryOpen((cur) => !cur)}
+          aria-haspopup="dialog"
+          aria-expanded={historyOpen}
+          aria-label="История чатов"
+          title="История чатов"
+          data-testid="raycast-history-btn"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden
           >
-            <span className="chat__vision-dot" aria-hidden />
-            <span className="chat__vision-text">vision</span>
-          </span>
-        )}
-      </div>
-      <div className="chat__list" ref={listRef}>
+            <path
+              d="M2 3.5h10M2 7h10M2 10.5h7"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
+          </svg>
+          <span>History</span>
+        </button>
+      </header>
+
+      {/* R248: routing mode pills. Mirrors ROUTING_PILLS above; the
+          active one is the currently persisted override. */}
+      <nav
+        className="raycast-pills"
+        role="tablist"
+        aria-label="Routing mode"
+        data-testid="raycast-pills"
+      >
+        {ROUTING_PILLS.map((p) => {
+          const isActive = p.mode === activePill;
+          return (
+            <button
+              key={p.label}
+              type="button"
+              role="tab"
+              aria-pressed={isActive}
+              aria-label={p.aria}
+              className={`raycast-pill ${isActive ? 'is-active' : ''}`}
+              onClick={() => onPickPill(p.mode)}
+              data-testid="raycast-pill"
+              data-pill-label={p.label}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* R248: full-width chat list (centered, max 760px). */}
+      <main className="raycast-messages" ref={listRef} data-testid="chat-list">
         {messages.map((m) => (
           <div
             key={m.id}
@@ -744,7 +866,7 @@ export function ChatView() {
                   className="chat__searchhint"
                   title={`Запрос: ${m.searchQuery}`}
                 >
-                  🔍
+                  search
                 </span>
               )}
             </div>
@@ -771,8 +893,8 @@ export function ChatView() {
             {m.toolCall && (
               <div className="chat__toolcall" data-pending={m.toolCall.pending ? '1' : '0'}>
                 <div className="chat__toolcall-head">
-                  <span className="chat__toolcall-ico">
-                    {m.toolCall.pending ? '⏳' : m.toolCall.error ? '⚠️' : '✅'}
+                  <span className="chat__toolcall-ico" aria-hidden>
+                    {m.toolCall.pending ? '…' : m.toolCall.error ? '!' : 'ok'}
                   </span>
                   <span className="chat__toolcall-name">
                     {m.toolCall.tool}
@@ -830,7 +952,7 @@ export function ChatView() {
               </div>
             )}
             {!m.imageBase64 && !m.attachmentImageDataUrl && !m.attachmentTextSnippet && m.attachmentCaption && (
-              <div className="chat__attachmeta">📎 {m.attachmentCaption}</div>
+              <div className="chat__attachmeta">file · {m.attachmentCaption}</div>
             )}
             {m.content && (
               <div className="chat__content">
@@ -845,16 +967,16 @@ export function ChatView() {
             )}
           </div>
         ))}
-      </div>
+      </main>
 
       {noKey && (
         <div className="chat__warn">
-          ⚠ API-ключ не задан — LLM не работает. Создай <code>.env</code> в корне
+          API-ключ не задан — LLM не работает. Создай <code>.env</code> в корне
           проекта (см. <code>.env.example</code>), укажи <code>VITE_LLM_API_KEY</code>,
           затем перезапусти dev/build.
         </div>
       )}
-      {llmError && <div className="chat__warn">⚠ {llmError}</div>}
+      {llmError && <div className="chat__warn">{llmError}</div>}
 
       {attachment && (
         <div className="chat__attach" data-kind={attachment.kind}>
@@ -867,7 +989,7 @@ export function ChatView() {
               title="Открепить"
               aria-label="Открепить файл"
             >
-              ✕
+              ×
             </button>
           </div>
           {attachment.kind === 'image' && attachment.imageDataUrl && (
@@ -881,253 +1003,132 @@ export function ChatView() {
             <pre className="chat__attachpre"><code>{attachment.textSnippet}</code></pre>
           )}
           {(attachment.kind === 'video') && (
-            <div className="chat__attachmeta">🎬 Видео — превью недоступно (v4 MVP)</div>
+            <div className="chat__attachmeta">Видео — превью недоступно (v4 MVP)</div>
           )}
           {(attachment.kind === 'audio') && (
-            <div className="chat__attachmeta">🎵 Аудио — превью недоступно (v4 MVP)</div>
+            <div className="chat__attachmeta">Аудио — превью недоступно (v4 MVP)</div>
           )}
           {(attachment.kind === 'binary' || attachment.kind === 'pdf') && !attachment.textSnippet && (
             <div className="chat__attachmeta">
-              📦 Бинарный файл — будет отправлен как метаданные (имя, размер)
+              Бинарный файл — будет отправлен как метаданные (имя, размер)
             </div>
           )}
         </div>
       )}
 
-      {/* R174: внешний <form class="chat__form"> оборачивает ChatInput, чтобы
-          (а) CSS-стили .chat__form (border-top, padding-top, safe-area,
-          keyboard-shift) применялись к зоне ввода, и (б) тесты и bubbled
-          submit из внутренней .chat__inputrow ловили onSubmit. Браузер
-          auto-закрывает внешнюю форму при виде вложенной <form> в ChatInput,
-          и onSubmit на этой пустой обёртке всё равно срабатывает, потому
-          что React listener сидит на самом DOM-элементе внешней формы. */}
-      <form className="chat__form" onSubmit={onSubmit}>
-      <ChatInput
-        value={draft}
-        onChange={setDraft}
-        onSubmitText={onSubmitText}
-        onVisionResponse={onVisionResponse}
-        onError={(msg) => setLlmError(msg)}
-        inputRef={inputRef}
-        busy={busy || recording}
-        provider={provider}
-        model={cfg.model}
-        visionAvailable={isVisionAvailable()}
-        visionModel={cfg.visionModel}
-        visionBaseUrl={cfg.baseUrl}
-        placeholder={
-          recording
-            ? '🎙 Говорите…'
-            : noKey
-              ? 'API-ключ не задан…'
-              : attachment
-                ? `Комментарий к ${attachment.info.name}…`
-                : undefined
-        }
-        leftToolbar={
-          <>
-            <button
-              type="button"
-              className="chat__iconbtn"
-              title="Скриншот основного монитора"
-              onClick={() => void onCapture()}
-              disabled={screenshotBusy}
-            >
-              {screenshotBusy ? '…' : '📸'}
-            </button>
-            <button
-              type="button"
-              className="chat__iconbtn"
-              title={attachment ? `Прикреплён: ${attachment.info.name} (повторный клик — заменить)` : 'Прикрепить файл'}
-              onClick={() => void onAttach()}
-              disabled={attachBusy}
-            >
-              {attachBusy ? '…' : '📎'}
-            </button>
-            {/* Pulse v5.1 — vision quick action: скриншот + авто-отправка в vision-LLM.
-                Если vision недоступна — кнопка disabled, badge объясняет. */}
-            <button
-              type="button"
-              className="chat__iconbtn chat__iconbtn--vision"
-              title={
-                isVisionAvailable()
-                  ? 'Снять скриншот и описать (vision-LLM)'
-                  : 'Vision-модель не настроена (см. Settings)'
-              }
-              onClick={() => void onDescribe()}
-              disabled={screenshotBusy || busy || !isVisionAvailable()}
-            >
-              {screenshotBusy ? '…' : '👁️'}
-            </button>
-            <button
-              type="button"
-              className={`chat__iconbtn chat__iconbtn--mic${recording ? ' is-rec' : ''}`}
-              title="Голосовой ввод (R188 VoiceButton, не подключён в этой итерации)"
-              aria-label="Голосовой ввод (R188 VoiceButton, не подключён в этой итерации)"
-              disabled
-            >
-              🎤
-            </button>
-          </>
-        }
-        rightToolbar={
-          <>
-            {/* Vision badge: виден всегда, когда vision-модель сконфигурирована.
-                Показывает какая именно vision-модель сейчас активна (с учётом override). */}
-            {isVisionAvailable() && (
-              <span
-                className="chat__vision"
-                title={`Vision-модель: ${cfg.visionModel}`}
-                aria-label={`Vision-модель: ${cfg.visionModel}`}
-              >
-                <span className="chat__vision-dot" aria-hidden />
-                <span className="chat__vision-text">🖼️ vision</span>
-              </span>
-            )}
-            <button
-              type="button"
-              className="chat__iconbtn chat__iconbtn--autostart"
-              title={
-                autostart === null
-                  ? 'Автозапуск…'
-                  : autostart
-                    ? 'Автозапуск вкл (клик — выкл)'
-                    : 'Автозапуск выкл (клик — вкл)'
-              }
-              onClick={() => void onToggleAutostart()}
-              disabled={autostart === null}
-              data-on={autostart ? '1' : '0'}
-            >
-              ⚙
-            </button>
-            {busy && (
-              <button
-                type="button"
-                className="chat__send chat__send--stop"
-                onClick={onStop}
-                title="Остановить генерацию"
-                data-testid="chat-stop"
-              >
-                ■
-              </button>
-            )}
-          </>
-        }
-      />
-      <button
-          type="button"
-          className="chat__iconbtn"
-          title="Скриншот основного монитора"
-          onClick={() => void onCapture()}
-          disabled={screenshotBusy}
-        >
-          {screenshotBusy ? '…' : '📸'}
-        </button>
-        <button
-          type="button"
-          className="chat__iconbtn"
-          title={attachment ? `Прикреплён: ${attachment.info.name} (повторный клик — заменить)` : 'Прикрепить файл'}
-          onClick={() => void onAttach()}
-          disabled={attachBusy}
-        >
-          {attachBusy ? '…' : '📎'}
-        </button>
-        {/* Pulse v5.1 — vision quick action: скриншот + авто-отправка в vision-LLM.
-            Если vision недоступна — кнопка disabled, badge объясняет. */}
-        <button
-          type="button"
-          className="chat__iconbtn chat__iconbtn--vision"
-          title={
-            isVisionAvailable()
-              ? 'Снять скриншот и описать (vision-LLM)'
-              : 'Vision-модель не настроена (см. Settings)'
-          }
-          onClick={() => void onDescribe()}
-          disabled={screenshotBusy || busy || !isVisionAvailable()}
-        >
-          {screenshotBusy ? '…' : '👁️'}
-        </button>
-        <VoiceButton
-          onTranscript={(text) => {
-            // v1: insert placeholder text into the input. R189+ will
-            // swap the placeholder for a real Whisper.cpp transcription.
-            setDraft((d) => (d ? `${d} ${text}` : text));
-            inputRef.current?.focus();
-          }}
-          onRecordingChange={setRecording}
-          disabled={busy}
-        />
-        <input
-          ref={inputRef}
-          className="chat__input"
-          type="text"
-          inputMode="text"
-          enterKeyHint="send"
-          autoComplete="off"
-          autoCorrect="off"
-          autoCapitalize="sentences"
-          spellCheck={false}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={
-            recording
-              ? '🎙 Говорите…'
-              : noKey
-                ? 'API-ключ не задан…'
-                : attachment
-                  ? `Комментарий к ${attachment.info.name}…`
-                  : `Спросить Pulse (${provider}, ${cfg.model}${isVisionAvailable() ? ' · 🖼️ vision' : ''})…`
-          }
-          autoFocus={typeof window !== 'undefined' && window.innerWidth >= 768}
-          disabled={busy || recording}
-        />
-        {/* Vision badge: виден всегда, когда vision-модель сконфигурирована.
-            Показывает какая именно vision-модель сейчас активна (с учётом override). */}
-        {isVisionAvailable() && (
-          <span
-            className="chat__vision"
-            title={`Vision-модель: ${cfg.visionModel}`}
-            aria-label={`Vision-модель: ${cfg.visionModel}`}
-          >
-            <span className="chat__vision-dot" aria-hidden />
-            <span className="chat__vision-text">🖼️ vision</span>
-          </span>
-        )}
-        <button
-          type="button"
-          className="chat__iconbtn chat__iconbtn--autostart"
-          title={
-            autostart === null
-              ? 'Автозапуск…'
-              : autostart
-                ? 'Автозапуск вкл (клик — выкл)'
-                : 'Автозапуск выкл (клик — вкл)'
-          }
-          onClick={() => void onToggleAutostart()}
-          disabled={autostart === null}
-          data-on={autostart ? '1' : '0'}
-        >
-          ⚙
-        </button>
-        {busy ? (
-          <button
-            type="button"
-            className="chat__send chat__send--stop"
-            onClick={onStop}
-            title="Остановить генерацию"
-          >
-            ■
-          </button>
-        ) : (
-          <button
-            className="chat__send"
-            type="submit"
-            disabled={(!draft.trim() && !attachment) || noKey}
-            title="Отправить"
-          >
-            ➤
-          </button>
-        )}
+      {/* R248: composer. R174's <form> wrapper is kept for compatibility
+          with bubbled submit from ChatInput's inner form. R176's code
+          block Copy button is still wired via `components={{ code: renderChatCode }}`. */}
+      <form className="raycast-composer" onSubmit={onSubmit}>
+        <div className="raycast-composer__inner">
+          <ChatInput
+            value={draft}
+            onChange={setDraft}
+            onSubmitText={onSubmitText}
+            onVisionResponse={onVisionResponse}
+            onError={(msg) => setLlmError(msg)}
+            inputRef={inputRef}
+            busy={busy || recording}
+            provider={provider}
+            model={cfg.model}
+            visionAvailable={isVisionAvailable()}
+            visionModel={cfg.visionModel}
+            visionBaseUrl={cfg.baseUrl}
+            placeholder={
+              recording
+                ? 'Говорите…'
+                : noKey
+                  ? 'API-ключ не задан…'
+                  : attachment
+                    ? `Комментарий к ${attachment.info.name}…`
+                    : 'Спросите про код проекта…'
+            }
+            leftToolbar={
+              <>
+                <button
+                  type="button"
+                  className="chat__iconbtn"
+                  title="Скриншот основного монитора"
+                  onClick={() => void onCapture()}
+                  disabled={screenshotBusy}
+                >
+                  {screenshotBusy ? '…' : 'shot'}
+                </button>
+                <button
+                  type="button"
+                  className="chat__iconbtn"
+                  title={attachment ? `Прикреплён: ${attachment.info.name} (повторный клик — заменить)` : 'Прикрепить файл'}
+                  onClick={() => void onAttach()}
+                  disabled={attachBusy}
+                >
+                  {attachBusy ? '…' : 'attach'}
+                </button>
+                <button
+                  type="button"
+                  className="chat__iconbtn chat__iconbtn--vision"
+                  title={
+                    isVisionAvailable()
+                      ? 'Снять скриншот и описать (vision-LLM)'
+                      : 'Vision-модель не настроена (см. Settings)'
+                  }
+                  onClick={() => void onDescribe()}
+                  disabled={screenshotBusy || busy || !isVisionAvailable()}
+                >
+                  {screenshotBusy ? '…' : 'vision'}
+                </button>
+                <VoiceButton
+                  onTranscript={(text) => {
+                    setDraft((d) => (d ? `${d} ${text}` : text));
+                    inputRef.current?.focus();
+                  }}
+                  onRecordingChange={setRecording}
+                  disabled={busy}
+                />
+              </>
+            }
+            rightToolbar={
+              <>
+                {isVisionAvailable() && (
+                  <span
+                    className="chat__vision"
+                    title={`Vision-модель: ${cfg.visionModel}`}
+                    aria-label={`Vision-модель: ${cfg.visionModel}`}
+                  >
+                    <span className="chat__vision-dot" aria-hidden />
+                    vision
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="chat__iconbtn chat__iconbtn--autostart"
+                  title={
+                    autostart === null
+                      ? 'Автозапуск…'
+                      : autostart
+                        ? 'Автозапуск вкл (клик — выкл)'
+                        : 'Автозапуск выкл (клик — вкл)'
+                  }
+                  onClick={() => void onToggleAutostart()}
+                  disabled={autostart === null}
+                  data-on={autostart ? '1' : '0'}
+                >
+                  autostart
+                </button>
+                {busy && (
+                  <button
+                    type="button"
+                    className="chat__send chat__send--stop"
+                    onClick={onStop}
+                    title="Остановить генерацию"
+                    data-testid="chat-stop"
+                  >
+                    stop
+                  </button>
+                )}
+              </>
+            }
+          />
+        </div>
       </form>
 
       {/* R89: routing override modal. Показывается по клику на chip'е
@@ -1168,7 +1169,25 @@ export function ChatView() {
           }}
         />
       )}
-      </div>
+
+      {/* R248: history popover. Anchored to the history button. */}
+      {historyOpen && (
+        <div
+          ref={historyPanelRef}
+          className="raycast-history"
+          data-testid="raycast-history-panel"
+        >
+          <HistoryPopover
+            chats={chats}
+            currentId={currentChatId}
+            onSelect={onSelectChat}
+            onNewChat={onNewChat}
+            onDelete={onDeleteChat}
+            onRename={onRenameChat}
+            onClose={() => setHistoryOpen(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -1228,7 +1247,7 @@ function RoutingOverrideModal(props: RoutingOverrideModalProps) {
             aria-label="Закрыть"
             title="Закрыть"
           >
-            ✕
+            ×
           </button>
         </div>
         <div className="chat__modal-body">
