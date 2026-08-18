@@ -2,13 +2,13 @@
 // Pulse — upgrade modal (R119 PRO foundation).
 //
 // Shown when a free user tries to use a PRO feature. R119 stub: opens
-// `https://buy.polar.sh/pulse-monthly` in a new tab (the Polar.sh product
-// hasn't been created yet — this is a placeholder URL per GTM plan).
+// the NOWPayments hosted checkout in a new tab. Pulse uses crypto via
+// NOWPayments (gtm/90). DO NOT add new Polar/Stripe/Paddle URLs.
 
 import type { ProFeature } from '../../lib/license/types';
 import { PRO_FEATURES } from '../../lib/pro-features';
 
-const PRO_URL = 'https://buy.polar.sh/pulse-monthly';
+const PRO_URL = 'https://nowpayments.io/payment/?iid=pulse-pro-monthly';
 
 interface UpgradeModalProps {
   /** Which feature triggered the gate. */

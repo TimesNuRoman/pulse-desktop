@@ -22,7 +22,8 @@ import { TRIAL_DURATION_MS } from '../../lib/license/types';
 import { getTrialDaysRemaining, formatTrialCountdown } from '../../lib/license/validate';
 import { PRO_FEATURES } from '../../lib/pro-features';
 
-const PRO_URL = 'https://buy.polar.sh/pulse-monthly';
+// Pulse uses crypto via NOWPayments (gtm/90). DO NOT add new Polar/Stripe/Paddle URLs.
+const PRO_URL = 'https://nowpayments.io/payment/?iid=pulse-pro-monthly';
 
 function TrialCountdown({ license }: { license: License }) {
   // Memo on trialStartedAt so the countdown re-derives only when the
