@@ -118,7 +118,7 @@ describe('PROSettings — R191 trial state', () => {
       btn!.click();
     });
     expect(openSpy).toHaveBeenCalledTimes(1);
-    expect(openSpy.mock.calls[0][0]).toMatch(/polar\.sh/);
+    expect(openSpy.mock.calls[0][0]).toMatch(/nowpayments\.io/);
   });
 
   test('renders the PRO feature list', () => {
